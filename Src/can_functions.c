@@ -34,6 +34,60 @@ void blink1(void)
 //    }
 }
 
+GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator)
+{
+  GPIO_TypeDef *port=NULL;
+#if USE_SHIFTING_IN_SetPinFromArray
+    // Calculate port address by shifting from GPIOA base
+    port = (GPIO_TypeDef *)((uint32_t)GPIOA + (enumerator * ((uint32_t)GPIOB - (uint32_t)GPIOA)));
+#else
+  switch (enumerator)
+    {
+      case 0:port=GPIOA;break;
+      case 1:port=GPIOB;break;
+      case 2:port=GPIOC;break;
+      case 3:port=GPIOD;break;
+      case 4:port=GPIOE;break;
+      case 5:port=GPIOF;break;
+      default:break;
+    }
+#endif
+  return port;
+}
+
+/***
+ * array[0] -> port
+ * array[1] -> pin
+ * array[2] -> status
+ */
+void SetPinFromArray(uint8_t *array) {
+    GPIO_TypeDef *port;
+    uint16_t pin;
+    GPIO_PinState state;
+
+    port = GetGPIOPortByEnumerator(array[0]);
+
+    pin = (1 << array[1]); // Convert pin number to HAL GPIO pin format
+    state = (array[2] != 0) ? GPIO_PIN_SET : GPIO_PIN_RESET;
+
+    // Set the pin state
+    HAL_GPIO_WritePin(port, pin, state);
+}
+
+GPIO_PinState ReadPinFromArray(uint8_t *array) {
+    GPIO_TypeDef *port;
+    uint16_t pin;
+
+    // Calculate port address by shifting from GPIOA base
+    port = (GPIO_TypeDef *)((uint32_t)GPIOA + (array[0] * ((uint32_t)GPIOB - (uint32_t)GPIOA)));
+
+    pin = (1 << array[1]); // Convert pin number to HAL GPIO pin format
+
+    // Read and return the pin state
+    return HAL_GPIO_ReadPin(port, pin);
+}
+
+
 /**
  * @brief Return 1 if ID are equal
  * @param rxCanMsg Pointer to the CAN Rx

@@ -41,7 +41,7 @@ s_BufferADC bufferADC[ADC_NUMBER_OF_CHANNELS];
 
 s_channelSettings channelSettings[ADC_NUMBER_OF_CHANNELS];
 
-s_regulatorSettings regulatorSettings[2]; // Regulator settings for master and slave
+s_regulatorSettings regulatorSettings[NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
 
 typedef enum
 {
@@ -167,6 +167,23 @@ machine_DAC_set (uint8_t channel, uint16_t value)
     default:
       break;
     }
+}
+
+void
+machine_DAC_set_si (uint8_t channel, float voltage)
+{
+  const float V_min = 50.0f;
+  const float V_max = 82.0f;
+  if (voltage < V_min)
+    {
+      voltage = V_min;
+    }
+  if (voltage > V_max)
+    {
+      voltage = V_max;
+    }
+  uint16_t value = UINT16_MAX * (voltage - V_min) / (V_max - V_min);
+  machine_DAC_set (channel, value);
 }
 
 /***
@@ -316,7 +333,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 //  blink1();
   switch ((uint8_t)msg.Data[0])
     {
-    case 0x00: // getSerialNumber
+    case AFECommand_getSerialNumber: // getSerialNumber
       {
 	tmp.id |= e_CANIdFunctionCode_multipleRead & 0b11;
 	tmp.dlc = 2 + 4;
@@ -329,7 +346,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	  }
 	break;
       }
-    case 0x01: // getVersion
+    case AFECommand_getVersion: // getVersion
       {
 	tmp.dlc = 2 + verArrLen;
 	memcpy (&tmp.data[2], &verArr[0], verArrLen);
@@ -344,13 +361,18 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0x03: // resetAll
+    case AFECommand_resetAll: // resetAll
       {
 	NVIC_SystemReset();
 	break;
       }
+    case 0x40:
+      {
+	SetPinFromArray(&msg.Data[2]);
+	break;
+      }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float value[Data[3:7]]  */
-    case 0x30:
+    case AFECommand_getSensorDataSi_last:
       {
 	uint8_t channel = msg.Data[2];
 	s_ADC_Measurement adc_val;
@@ -362,7 +384,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]  */
-    case 0x31:
+    case AFECommand_getSensorDataSi_average:
       {
 	uint8_t channel = msg.Data[2];
 	float adc_value_real;
@@ -373,7 +395,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
       }
       /* Send SI data [Data[0]] from all channels as float average value[Data[3:7]]  */
-    case 0x32:
+    case AFECommand_getSensorDataSi_all_average:
       {
 	for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
 	  {
@@ -387,31 +409,48 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	  }
       }
+      /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]
+       * and timestamp on next message */
+    case AFECommand_getSensorDataSiAndTimestamp_average:
+      {
+	uint8_t channel = msg.Data[2];
+	float adc_value_real;
+	uint32_t timestamp = HAL_GetTick();
+	get_average_atSettings (&channelSettings[channel], &adc_value_real);
+	tmp.data[0] = 0x3A;
+	tmp.data[1] = 0x21;
+	tmp.data[2] = channel;
+	tmp.dlc = 2 + 1 + sizeof(float);
+	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	tmp.data[0] = 0x3A;
+	tmp.data[1] = 0x22;
+	tmp.data[2] = channel;
+	tmp.dlc = 2 + 1 + sizeof(uint32_t);
+	memcpy (&tmp.data[3], &timestamp, sizeof(float));
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+      }
       /* Temperature loop runtime */
-    case 0xC0: // start or stop [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setTemperatureLoopForChannel: // start or stop [Data[3] temperature loop for channel [Data[2]]
       {
 	uint8_t channel = msg.Data[2];
 	uint8_t status =  msg.Data[3];
-//	regulatorSettings[channel].enabled = msg.Data[3];
 	switch (channel)
 	  {
-	  case 0x00:
+	  case AFECommandSubdevice_master:
 	    {
 	      regulatorSettings[0].enabled = status;
-//	      machine_DAC_switch (DAC_CHANNEL_1, regulatorSettings[channel].enabled);
 	      break;
 	    }
-	  case 0x01:
+	  case AFECommandSubdevice_slave:
 	    {
 	      regulatorSettings[1].enabled = status;
-//	      machine_DAC_switch (DAC_CHANNEL_2, regulatorSettings[channel].enabled);
 	      break;
 	    }
-	  case 0x03:
+	  case AFECommandSubdevice_both:
 	    {
 	      regulatorSettings[0].enabled = status;
 	      regulatorSettings[1].enabled = status;
-//	      machine_DAC_switch (0x11, regulatorSettings[channel].enabled);
 	      break;
 	    }
 	  default:
@@ -421,6 +460,39 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[3] = status;
 	tmp.dlc = 2 + 1 + 1;
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
+    case AFECommand_setTemperatureLoopForChannel_byMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
+      {
+	uint8_t channel = msg.Data[2];
+	uint8_t status =  msg.Data[3];
+//	regulatorSettings[channel].enabled = msg.Data[3];
+	tmp.data[2] = AFECommandSubdevice_both;
+	tmp.dlc = 2 + 2;
+	tmp.data[3] = 0x00;
+	for(uint8_t i0=0;i0<NUMBER_OF_SUBDEVICES;++i0)
+	  {
+	    if(0x01 & (channel >> i0))
+	      {
+		regulatorSettings[i0].enabled = 0x01 & (status >> i0);
+	      }
+	    tmp.data[3] |= regulatorSettings[i0].enabled << i0;
+	  }
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
+    case 0xA0: // Send data[2] bytes of data[3] by SPI1; return data[2] as error code
+      {
+	uint8_t spiData[5];
+	uint8_t spiDataLen = msg.Data[2];
+	if (spiDataLen > 5)
+	  {
+	    break;
+	  }
+	memcpy (&spiData[0], &msg.Data[3], spiDataLen);
+	tmp.data[2] = HAL_SPI_Transmit (&hspi1, &spiData[0], spiDataLen, TIMEOUT_SPI1_MS);
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+#warning "Test SPI"
 	break;
       }
     case 0xC2: // set [Data[3] temperature loop for channel [Data[2]]
@@ -628,6 +700,7 @@ machine_control (void)
 	{
 	  float voltage_for_SiPM = get_voltage_for_SiPM_x (average_Temperature,
 							   regulatorSettings_ptr);
+	  regulatorSettings_ptr->T_old = average_Temperature;
 	  switch (channel)
 	    {
 	    case 0:
@@ -668,6 +741,7 @@ machine_main (void)
 	HAL_TIM_Base_Start (&htim1);
 //	htim1.Instance->ARR = 50000-1;
 	htim1.Instance->ARR = 10000 - 1;
+
 
 	for (uint8_t i0 = 0; i0 < 20; ++i0)
 	  {

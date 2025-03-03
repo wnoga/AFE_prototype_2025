@@ -74,6 +74,10 @@ typedef struct
 extern volatile int8_t canRxFlag;
 extern s_can_msg_recieved can_msg_received;
 
+GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator);
+void SetPinFromArray(uint8_t *array);
+GPIO_PinState ReadPinFromArray(uint8_t *array);
+
 // Add message to buffer
 int8_t CAN_EnqueueMessage (CircularBuffer_t *cb, CAN_Message_t *msg);
 
@@ -85,5 +89,46 @@ void can_machine (void);
 
 void _delay (size_t ms);
 void blink1(void);
+
+//self.get_sensor_data_si = 0x30
+//self.averaging_mode = 0xD0
+//self.bin_duration_ms = 0xD1
+//self.time_interval_ms = 0xD3
+//self.scaling_factor = 0xD5
+//self.get_timestamp = 0xE0
+typedef enum
+{
+  AFECommand_getSerialNumber = 0x00,
+  AFECommand_getVersion = 0x01,
+  AFECommand_resetAll = 0x03,
+  AFECommand_getSensorDataSi_last = 0x30,
+  AFECommand_getSensorDataSi_average = 0x31,
+  AFECommand_getSensorDataSi_all_last = 0x32,
+  AFECommand_getSensorDataSi_all_average = 0x33,
+  AFECommand_getSensorDataSiAndTimestamp_average = 0x3B,
+  AFECommand_setTemperatureLoopForChannel = 0xC0,
+  AFECommand_setTemperatureLoopForChannel_byMask = 0xC1,
+  AFECommand_setAveragingMode = 0xD0,
+  AFECommand_setAlpha = 0xD1,
+} AFECommand;
+
+typedef enum
+{
+  AFECommandChannel_0 = 0b00000001,
+  AFECommandChannel_1 = 0b00000010,
+  AFECommandChannel_2 = 0b00000100,
+  AFECommandChannel_3 = 0b00001000,
+  AFECommandChannel_4 = 0b00010000,
+  AFECommandChannel_5 = 0b00100000,
+  AFECommandChannel_6 = 0b01000000,
+  AFECommandChannel_7 = 0b10000000,
+} AFECommandChannel;
+
+typedef enum
+{
+  AFECommandSubdevice_master 	= 0b00000001,
+  AFECommandSubdevice_slave 	= 0b00000010,
+  AFECommandSubdevice_both 	= 0b00000011,
+} AFECommandSubdevice;
 
 #endif /* CAN_FUNCTIONS_H_ */
