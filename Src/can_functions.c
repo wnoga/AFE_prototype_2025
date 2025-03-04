@@ -309,6 +309,7 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 	      memcpy (&hcan->pTxMsg->Data[0], &msg.data[0], msg.dlc);
 	      if (HAL_CAN_Transmit_IT (hcan) == HAL_OK)
 		{
+//		  blink1();
 		  canState = CAN_SENDING; // Set state to sending
 		  return;
 		}

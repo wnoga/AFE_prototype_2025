@@ -47,6 +47,8 @@ typedef struct
   float alpha; // weight modificator for averaging
   uint32_t max_N; // maximum number of data used for averaging
 
+  uint32_t period_ms; // set how often data should be send periodically
+  uint32_t period_ms_last;
 
 } s_channelSettings;
 

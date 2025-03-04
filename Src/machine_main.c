@@ -65,6 +65,38 @@ void update_buffer_by_averagingSettings(s_channelSettings *averagingSettings)
   averagingSettings->buffer_ADC->tail = averagingSettings->buffer_ADC->head = 0;
 }
 
+static void enqueueSensorDataSIandTimestamp(CircularBuffer_t *cb, uint8_t command, uint8_t channel,float adc_value_real, uint32_t timestamp)
+{
+	CAN_Message_t tmp;
+	tmp.id = CAN_ID_IN_MSG;
+	tmp.timestamp = HAL_GetTick();
+	tmp.data[0] = command;
+	tmp.data[1] = 0x21;
+	tmp.data[2] = channel;
+	tmp.dlc = 2 + 1 + sizeof(float);
+	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
+	CAN_EnqueueMessage (cb, &tmp);
+	tmp.data[0] = command;
+	tmp.data[1] = 0x22;
+	tmp.data[2] = channel;
+	tmp.dlc = 2 + 1 + sizeof(uint32_t);
+	memcpy (&tmp.data[3], &timestamp, sizeof(float));
+	CAN_EnqueueMessage (cb, &tmp);
+}
+
+static void enqueueSensorDataSI(CircularBuffer_t *cb, uint8_t command, uint8_t channel,float adc_value_real)
+{
+	CAN_Message_t tmp;
+	tmp.id = CAN_ID_IN_MSG;
+	tmp.timestamp = HAL_GetTick();
+	tmp.data[0] = command;
+	tmp.data[1] = 0x11;
+	tmp.data[2] = channel;
+	tmp.dlc = 2 + 1 + sizeof(float);
+	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
+	CAN_EnqueueMessage (cb, &tmp);
+}
+
 /***
  * Keep this to avoid mistake from values
  * channel 0x00 -> DAC_CHANNEL_1
@@ -192,7 +224,7 @@ machine_DAC_set_si (uint8_t channel, float voltage)
  * channel 0x10 -> DAC_CHANNEL_2
  * channel 0x11 -> both
  */
-static void
+static HAL_StatusTypeDef
 machine_DAC_switch (uint8_t channel, uint8_t enable)
 {
   switch (channel)
@@ -262,6 +294,7 @@ machine_DAC_switch (uint8_t channel, uint8_t enable)
     default:
       break;
     }
+  return HAL_OK;
 }
 
 /***
@@ -286,6 +319,9 @@ machine_main_init_0 (void)
       channelSettings[i0].max_dt_ms = 3600 * 1000; // 1 hour
       channelSettings[i0].multiplicator = 1.0;
       channelSettings[i0].max_N = ADC_MEASUREMENT_RAW_SIZE_MAX;
+
+      channelSettings[i0].period_ms = 0;
+      channelSettings[i0].period_ms_last = 0;
 
       machnie_flag_averaging_enabled[i0] = 0;
 
@@ -371,6 +407,8 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	SetPinFromArray(&msg.Data[2]);
 	break;
       }
+
+      /**** 0x30 ****/
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float value[Data[3:7]]  */
     case AFECommand_getSensorDataSi_last:
       {
@@ -409,6 +447,21 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	  }
       }
+    case AFECommand_setSensorDataSi_all_periodic_average:
+      {
+	tmp.data[1] = get_byte_of_message_number (0, 1);
+	tmp.data[2] = 0x00;
+	uint32_t period_ms;
+	memcpy (&period_ms, &msg.Data[2], sizeof(uint32_t));
+	for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
+	  {
+	    channelSettings[channel].period_ms = period_ms;
+	    tmp.data[2] |= 1 << channel; // Set flag if this channel is set
+	  }
+	tmp.dlc = 2 + 1;
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]
        * and timestamp on next message */
     case AFECommand_getSensorDataSiAndTimestamp_average:
@@ -430,8 +483,47 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	memcpy (&tmp.data[3], &timestamp, sizeof(float));
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
       }
+    case AFECommand_getSensorDataSi_all_periodic_average:
+      {
+#warning "Update this" // TODO Update this
+	break;
+      }
+
+      /* 0xA0 */
+    case AFECommand_transmitSPIData: // Send data[2] bytes of data[3] by SPI1; return data[2] as error code
+      {
+	uint8_t spiData[5];
+	uint8_t spiDataLen = msg.Data[2];
+	tmp.dlc = 2 + 1;
+	if (spiDataLen > 5)
+	  {
+	    tmp.data[2] = HAL_ERROR;
+	    CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	    break;
+	  }
+	memcpy (&spiData[0], &msg.Data[3], spiDataLen);
+	tmp.data[2] = HAL_SPI_Transmit (&hspi1, &spiData[0], spiDataLen, TIMEOUT_SPI1_MS);
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+#warning "Test SPI!" // TODO Test SPI
+	break;
+      }
+    case AFECommand_writeGPIO:
+      {
+	GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator(msg.Data[2]);
+	uint32_t GPIO_Pin = 1 << msg.Data[3];
+	uint8_t PinState = msg.Data[4];
+	HAL_GPIO_WritePin(GPIOx, GPIO_Pin, PinState);
+	tmp.data[2] = msg.Data[2];
+	tmp.data[3] = msg.Data[3];
+	tmp.data[4] = msg.Data[4];
+	tmp.dlc = 5;
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
+
+      /* 0xC0 */
       /* Temperature loop runtime */
-    case AFECommand_setTemperatureLoopForChannel: // start or stop [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setTemperatureLoopForChannelState_bySubdevice: // start or stop [Data[3] temperature loop for channel [Data[2]]
       {
 	uint8_t channel = msg.Data[2];
 	uint8_t status =  msg.Data[3];
@@ -462,7 +554,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setTemperatureLoopForChannel_byMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setTemperatureLoopForChannelState_byMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
       {
 	uint8_t channel = msg.Data[2];
 	uint8_t status =  msg.Data[3];
@@ -481,21 +573,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xA0: // Send data[2] bytes of data[3] by SPI1; return data[2] as error code
-      {
-	uint8_t spiData[5];
-	uint8_t spiDataLen = msg.Data[2];
-	if (spiDataLen > 5)
-	  {
-	    break;
-	  }
-	memcpy (&spiData[0], &msg.Data[3], spiDataLen);
-	tmp.data[2] = HAL_SPI_Transmit (&hspi1, &spiData[0], spiDataLen, TIMEOUT_SPI1_MS);
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
-#warning "Test SPI"
-	break;
-      }
-    case 0xC2: // set [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setDACValueRaw_bySubdevice: // set [Data[3] temperature loop for channel [Data[2]]
       {
 	uint8_t channel = msg.Data[2];
 	regulatorSettings[channel].enabled = msg.Data[3];
@@ -503,17 +581,17 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	memcpy (&value, &msg.Data[3], sizeof(uint16_t));
 	switch (channel)
 	  {
-	  case 0x00:
+	  case AFECommandSubdevice_master:
 	    {
 	      machine_DAC_set (DAC_CHANNEL_1, value);
 	      break;
 	    }
-	  case 0x01:
+	  case AFECommandSubdevice_slave:
 	    {
 	      machine_DAC_set (DAC_CHANNEL_2, value);
 	      break;
 	    }
-	  case 0x03:
+	  case AFECommandSubdevice_both:
 	    {
 	      machine_DAC_set (0x11, value);
 	      break;
@@ -527,7 +605,42 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xC3: // stop temperature loop for all channels
+    case AFECommand_setDACValueSi_bySubdevice: // set [Data[3] temperature loop for channel [Data[2]]
+      {
+	uint8_t channel = msg.Data[2];
+	regulatorSettings[channel].enabled = msg.Data[3];
+	float valueSi = 0.0;
+	memcpy (&valueSi, &msg.Data[3], sizeof(float));
+	/* FIXME Add function to convert DAC SI value to uint16_t */
+	Error_Handler();
+	uint16_t value = roundf(valueSi);
+	switch (channel)
+	  {
+	  case AFECommandSubdevice_master:
+	    {
+	      machine_DAC_set (DAC_CHANNEL_1, value);
+	      break;
+	    }
+	  case AFECommandSubdevice_slave:
+	    {
+	      machine_DAC_set (DAC_CHANNEL_2, value);
+	      break;
+	    }
+	  case AFECommandSubdevice_both:
+	    {
+	      machine_DAC_set (0x11, value);
+	      break;
+	    }
+	  default:
+	    break;
+	  }
+	tmp.data[2] = channel;
+	tmp.data[3] = value;
+	tmp.dlc = 2 + 1 + 1;
+	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
+    case AFECommand_stopTemperatureLoopForAllChannels: // stop temperature loop for all channels
       {
 	for (uint8_t channel = 0; channel < 2; ++channel)
 	  {
@@ -538,39 +651,40 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xC4: // Start or stop DAC
+    case AFECommand_setDAC_bySubdevice: // Start or stop DAC
       {
 	uint8_t channel = msg.Data[2];
 	uint8_t status =  msg.Data[3];
 	switch (channel)
 	  {
-	  case 0x00:
+	  case AFECommandSubdevice_master:
 	    {
-	      machine_DAC_switch (DAC_CHANNEL_1, status);
+	      tmp.data[4] = machine_DAC_switch (DAC_CHANNEL_1, status);
 	      break;
 	    }
-	  case 0x01:
+	  case AFECommandSubdevice_slave:
 	    {
 	      machine_DAC_switch (DAC_CHANNEL_2, status);
 	      break;
 	    }
-	  case 0x03:
+	  case AFECommandSubdevice_both:
 	    {
-	      machine_DAC_switch (DAC_CHANNEL_1, status);
-	      machine_DAC_switch (DAC_CHANNEL_2, status);
+	      machine_DAC_switch (0x11, status);
 	      break;
 	    }
 	  default:
 	    break;
 	  }
 	tmp.data[2] = channel;
-	tmp.data[3] = status;
-	tmp.dlc = 2 + 1 + 1;
+//	tmp.data[3] = status;
+	tmp.dlc = 2 + 3;
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
+
+      /*********** 0xD0 ************/
       /* Set setting [Data[0]] for adc channel [Data[2]] by uint32_t value[Data[3:7]]  */
-    case 0xD0: // set averagingSettings.averaging_method
+    case AFECommand_setAveragingMode: // set averagingSettings.averaging_method
       {
 	uint8_t channel = msg.Data[2];
 	channelSettings[channel].averaging_method = (e_average) msg.Data[3];
@@ -581,7 +695,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xD1: // set averagingSettings.alpha
+    case AFECommand_setAveragingAlpha: // set averagingSettings.alpha
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].alpha, &msg.Data[3], sizeof(float));
@@ -592,7 +706,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xD2: // set averagingSettings.buffer_size
+    case AFECommand_setAveragingBufferSize: // set averagingSettings.buffer_size
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].buffer_size, &msg.Data[3], sizeof(uint32_t));
@@ -603,7 +717,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xD3: // set averagingSettings.dt_ms
+    case AFECommand_setAveragingDt_ms: // set averagingSettings.dt_ms
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].dt_ms, &msg.Data[3], sizeof(uint32_t));
@@ -614,7 +728,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xD4: // set averagingSettings.max_dt_ms
+    case AFECommand_setAveragingMaxDt_ms: // set averagingSettings.max_dt_ms
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].max_dt_ms, &msg.Data[3], sizeof(uint32_t));
@@ -625,7 +739,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xD5: // set averagingSettings.multiplicator
+    case AFECommand_setAveragingMultiplicator: // set averagingSettings.multiplicator
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].multiplicator, &msg.Data[3], sizeof(uint32_t));
@@ -636,7 +750,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case 0xD6: // set averagingSettings.subdevice
+    case AFECommand_setAveragingSubdevice: // set averagingSettings.subdevice
       {
 	update_buffer_by_averagingSettings(&channelSettings[msg.Data[2]]);
 //	averagingSettings[msg.Data[2]].subdevice = (e_subdevice)msg.Data[3];
@@ -645,7 +759,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
     default:
       {
 	tmp.dlc = 8;
-	tmp.data[0] = 0x12;
+	tmp.data[0] = 0xFF;
 	tmp.data[1] = 0x34;
 	tmp.data[2] = 0x56;
 	tmp.data[3] = 0x78;
@@ -723,6 +837,28 @@ machine_control (void)
     }
 }
 
+static void
+machine_periodic_report (void)
+{
+  for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
+    {
+      s_channelSettings *ptr = &channelSettings[channel];
+      uint32_t timestamp = HAL_GetTick ();
+      if (ptr->period_ms > 0)
+	{
+	  if ((timestamp - ptr->period_ms_last) >= ptr->period_ms)
+	    {
+	      float adc_value_real = 0.0;
+	      ptr->period_ms_last = timestamp;
+	      get_average_atSettings (ptr, &adc_value_real);
+	      enqueueSensorDataSIandTimestamp (&canTxBuffer,
+					       AFECommand_getSensorDataSi_all_periodic_average,
+					       channel, adc_value_real, timestamp);
+	    }
+	}
+    }
+}
+
 static uint32_t last_blink = 0;
 
 
@@ -759,15 +895,17 @@ machine_main (void)
 	  {
 	    canRxFlag = 0;
 	    /* Execute command */
+//	    blink1();
 	    can_execute (can_msg_received, &hcan);
 	  }
 
 	machine_control ();
-	if((HAL_GetTick() - last_blink) > 250)
-	  {
-	    last_blink = HAL_GetTick();
-	    blink1();
-	  }
+	machine_periodic_report();
+//	if((HAL_GetTick() - last_blink) > 250)
+//	  {
+//	    last_blink = HAL_GetTick();
+//	    blink1();
+//	  }
 	break;
       }
     default:
