@@ -97,6 +97,45 @@ static void enqueueSensorDataSI(CircularBuffer_t *cb, uint8_t command, uint8_t c
 	CAN_EnqueueMessage (cb, &tmp);
 }
 
+static void
+send_SensorDataSi_average (uint8_t msg_id, uint8_t command, CircularBuffer_t *cb,
+			   s_channelSettings *ch)
+{
+  float adc_value_real;
+  CAN_Message_t tmp;
+  tmp.id = msg_id;
+  tmp.timestamp = HAL_GetTick (); // for timeout
+  get_average_atSettings (ch, &adc_value_real);
+  tmp.data[0] = command;
+  tmp.data[1] = get_byte_of_message_number (0, 1);
+  tmp.data[2] = ch->channel_nr;
+  tmp.dlc = 2 + 1 + sizeof(float);
+  memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
+  CAN_EnqueueMessage (cb, &tmp);
+}
+static void
+send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, CircularBuffer_t *cb,
+				       s_channelSettings *ch, uint32_t timestamp)
+{
+  float adc_value_real;
+  CAN_Message_t tmp;
+  tmp.id = msg_id;
+  tmp.timestamp = HAL_GetTick (); // for timeout
+  get_average_atSettings (ch, &adc_value_real);
+  tmp.data[0] = command;
+  tmp.data[1] = get_byte_of_message_number (0, 2);
+  tmp.data[2] = ch->channel_nr;
+  tmp.dlc = 2 + 1 + sizeof(float);
+  memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
+  CAN_EnqueueMessage (cb, &tmp);
+  tmp.data[0] = command;
+  tmp.data[1] = get_byte_of_message_number (1, 2);
+  tmp.data[2] = ch->channel_nr;
+  tmp.dlc = 2 + 1 + sizeof(uint32_t);
+  memcpy (&tmp.data[3], &timestamp, sizeof(float));
+  CAN_EnqueueMessage (cb, &tmp);
+}
+
 /***
  * Keep this to avoid mistake from values
  * channel 0x00 -> DAC_CHANNEL_1
@@ -312,6 +351,7 @@ machine_main_init_0 (void)
   machine_main_status = e_machine_main_init;
   for (uint8_t i0 = 0; i0 < ADC_NUMBER_OF_CHANNELS; ++i0)
     {
+      channelSettings[i0].channel_nr = i0;
       channelSettings[i0].averaging_method = e_average_NONE;
       channelSettings[i0].alpha = 1.0;
       channelSettings[i0].buffer_ADC = &bufferADC[i0];
@@ -346,28 +386,29 @@ machine_main_init_0 (void)
   regulatorSettings[1].temperature_channelSettings_ptr = &channelSettings[6];
 }
 
-static uint8_t
-get_byte_of_message_number(uint8_t msg_index, uint8_t msg_index_max)
+uint8_t
+get_byte_of_message_number (uint8_t msg_index, uint8_t msg_index_max)
 {
-  if((msg_index > 15) | (msg_index_max > 15)) return 0;
-  return (0xF0 & (msg_index_max << 4)) | ((msg_index+1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
+  if ((msg_index > 15) | (msg_index_max > 15)) return 0;
+  return (0xF0 & (msg_index_max << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
 }
 
 static uint32_t value0;
 void
 can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 {
-  //  uint8_t tmp[8];
   CAN_Message_t tmp;
+  uint8_t command = (uint8_t)msg.Data[0];
+  uint32_t msg_id = (1 << 10) | (CAN_ID << 2); // Master bit and own receiver ID
   tmp.timestamp = HAL_GetTick ();
-  tmp.id = (1 << 10) | (CAN_ID << 2); // Master bit and own receiver ID
-  tmp.data[0] = msg.Data[0]; // Standard reply [function]
-  tmp.data[1] = 0x11; // Standard number of messages 1/1
+  tmp.id = msg_id;
+  tmp.data[0] = command; // Standard reply [function]
+  tmp.data[1] = get_byte_of_message_number(0, 1); // Standard number of messages 1/1
 		      // (0xF0 >> 4) = total number of messages in queue
 		      // (0x0F) = message number (in the queue)
   tmp.dlc = 8;
 //  blink1();
-  switch ((uint8_t)msg.Data[0])
+  switch (command)
     {
     case AFECommand_getSerialNumber: // getSerialNumber
       {
@@ -400,11 +441,6 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
     case AFECommand_resetAll: // resetAll
       {
 	NVIC_SystemReset();
-	break;
-      }
-    case 0x40:
-      {
-	SetPinFromArray(&msg.Data[2]);
 	break;
       }
 
@@ -467,25 +503,25 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
     case AFECommand_getSensorDataSiAndTimestamp_average:
       {
 	uint8_t channel = msg.Data[2];
-	float adc_value_real;
-	uint32_t timestamp = HAL_GetTick();
-	get_average_atSettings (&channelSettings[channel], &adc_value_real);
-	tmp.data[0] = 0x3A;
-	tmp.data[1] = 0x21;
-	tmp.data[2] = channel;
-	tmp.dlc = 2 + 1 + sizeof(float);
-	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
-	tmp.data[0] = 0x3A;
-	tmp.data[1] = 0x22;
-	tmp.data[2] = channel;
-	tmp.dlc = 2 + 1 + sizeof(uint32_t);
-	memcpy (&tmp.data[3], &timestamp, sizeof(float));
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	if (channel >= ADC_NUMBER_OF_CHANNELS)
+	  {
+	    // TODO Error?
+	    break;
+	  }
+	send_SensorDataSiAndTimestamp_average (tmp.id, command, &canTxBuffer,
+					       &channelSettings[channel], HAL_GetTick ());
+	break;
       }
     case AFECommand_getSensorDataSi_all_periodic_average:
       {
 #warning "Update this" // TODO Update this
+	break;
+      }
+
+      /**** 0x40 set periodic report ****/
+    case AFECOMMAND_setSensorDataSi_periodic_last:
+      {
+
 	break;
       }
 

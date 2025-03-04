@@ -113,6 +113,11 @@ typedef enum
   AFECommand_getSensorDataSiAndTimestamp_average = 0x3B,
   AFECommand_getSensorDataSi_all_periodic_average = 0x3F,
 
+  AFECOMMAND_setSensorDataSi_periodic_last = 0x40,
+  AFECOMMAND_setSensorDataSiAndTimestamp_periodic_last = 0x41,
+  AFECOMMAND_setSensorDataSi_periodic_average = 0x42,
+  AFECOMMAND_setSensorDataSiAndTimestamp_periodic_average = 0x43,
+
   AFECommand_transmitSPIData = 0xA0,
   AFECommand_writeGPIO = 0xA2,
 

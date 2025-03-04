@@ -32,6 +32,7 @@ typedef enum
 
 typedef struct
 {
+    uint8_t channel_nr; // ADC channel number
   // exponential
   e_subdevice subdevice; // master or slave
   s_BufferADC *buffer_ADC; // pointer to buffer for ADC structure

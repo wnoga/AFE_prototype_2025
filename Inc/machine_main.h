@@ -18,6 +18,8 @@
 
 #define USE_SHIFTING_IN_SetPinFromArray 0
 
+uint8_t get_byte_of_message_number(uint8_t msg_index, uint8_t msg_index_max);
+
 void machine_main_init_0 (void);
 void machine_main (void);
 

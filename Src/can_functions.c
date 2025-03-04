@@ -301,18 +301,17 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 	      if ((HAL_GetTick () - canTxLast_ms) > CAN_MSG_BURST_DELAY_MS)
 		{
 #endif // CAN_MSG_BURST_DELAY_MS
-	      canTxLast_ms = HAL_GetTick ();
-	      hcan->pTxMsg->StdId = msg.id;
-	      hcan->pTxMsg->DLC = msg.dlc;
-	      hcan->pTxMsg->IDE = CAN_ID_STD;
-	      hcan->pTxMsg->RTR = CAN_RTR_DATA;
-	      memcpy (&hcan->pTxMsg->Data[0], &msg.data[0], msg.dlc);
-	      if (HAL_CAN_Transmit_IT (hcan) == HAL_OK)
-		{
-//		  blink1();
-		  canState = CAN_SENDING; // Set state to sending
-		  return;
-		}
+		  canTxLast_ms = HAL_GetTick ();
+		  hcan->pTxMsg->StdId = msg.id;
+		  hcan->pTxMsg->DLC = msg.dlc;
+		  hcan->pTxMsg->IDE = CAN_ID_STD;
+		  hcan->pTxMsg->RTR = CAN_RTR_DATA;
+		  memcpy (&hcan->pTxMsg->Data[0], &msg.data[0], msg.dlc);
+		  if (HAL_CAN_Transmit_IT (hcan) == HAL_OK)
+		    {
+		      canState = CAN_SENDING; // Set state to sending
+		      return;
+		    }
 #if CAN_MSG_BURST_DELAY_MS
 		}
 	      else
