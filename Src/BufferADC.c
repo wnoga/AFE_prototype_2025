@@ -105,13 +105,12 @@ get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here)
   return get_n_latest_from_buffer_max_dt_ms (cb, N, here, 0, 0);
 }
 
-void
+void __attribute__ ((optimize("-O3")))
 add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement)
 {
-  s_ADC_Measurement tmp;
-  if (get_n_latest_from_buffer (cb, 1, &tmp))
+  if (cb->tail != cb->head)
     {
-      if (((measurement->timestamp_ms - tmp.timestamp_ms) < cb->dt_ms))
+      if ((measurement->timestamp_ms - cb->buffer[cb->tail].timestamp_ms) < cb->dt_ms)
 	{
 	  return;
 	}

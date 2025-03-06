@@ -146,7 +146,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   float sum = 0.0f;
   float weight_sum = 0.0f;
 
-  for (size_t i = 0; i < N; i++)
+  for (size_t i0 = 0; i0 < N; i0++)
     {
       if (check_time_diff_is_more_than (cb->buffer[start_index].timestamp_ms, timestamp_ms,
 					max_dt_ms, cb->dt_ms) && (max_dt_ms != 0))
@@ -157,23 +157,33 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       switch (method)
 	{
 	case e_average_STANDARD:
-	  sum += value;
-	  break;
+	  {
+	    sum += value;
+	    break;
+	  }
 	case e_average_EXPONENTIAL:
-	  sum = alpha * value + (1 - alpha) * sum;
-	  break;
+	  {
+	    sum = alpha * value + (1 - alpha) * sum;
+	    break;
+	  }
 	case e_average_RMS:
-	  sum += value * value;
-	  break;
+	  {
+	    sum += value * value;
+	    break;
+	  }
 	case e_average_HARMONIC:
-	  if (value != 0)
-	    {
-	      sum += 1.0f / value;
-	    }
-	  break;
+	  {
+	    if (value != 0)
+	      {
+		sum += 1.0f / value;
+	      }
+	    break;
+	  }
 	case e_average_GEOMETRIC:
-	  sum = (i == 0) ? value : sum * value;
-	  break;
+	  {
+	    sum = (i0 == 0) ? value : sum * value;
+	    break;
+	  }
 	case e_average_WEIGHTED_EXPONENTIAL:
 	  {
 	    float r = timestamp_ms - cb->buffer[start_index].timestamp_ms;
@@ -192,26 +202,39 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   switch (method)
     {
     case e_average_STANDARD:
-      *average_result = (count != 0) ? sum / count : 0.0f;
-      break;
+      {
+	*average_result = (count != 0) ? sum / count : 0.0f;
+	break;
+      }
     case e_average_EXPONENTIAL:
+      // don't break
     case e_average_WEIGHTED_EXPONENTIAL:
-      *average_result = (weight_sum != 0) ? sum / weight_sum : 0.0f;
-      break;
+      {
+	*average_result = (weight_sum != 0) ? sum / weight_sum : 0.0f;
+	break;
+      }
     case e_average_RMS:
-      *average_result = sqrt (sum / count);
-      break;
+      {
+	*average_result = sqrt (sum / count);
+	break;
+      }
     case e_average_HARMONIC:
-      *average_result = (sum != 0) ? count / sum : 0.0f;
-      break;
+      {
+	*average_result = (sum != 0) ? count / sum : 0.0f;
+	break;
+      }
     case e_average_GEOMETRIC:
-      *average_result = pow (sum, 1.0 / count);
-      break;
+      {
+	*average_result = pow (sum, 1.0 / count);
+	break;
+      }
     default:
-      *average_result = 0.0f;
-      break;
+      {
+	*average_result = 0.0f;
+	break;
+      }
     }
-  if(count == 0)
+  if (count == 0)
     {
       *average_result = NAN;
     }

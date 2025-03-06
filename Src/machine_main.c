@@ -136,6 +136,26 @@ send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, Circular
   CAN_EnqueueMessage (cb, &tmp);
 }
 
+static void
+machine_GPIO_WritePin (GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState)
+{
+#if DEBUG_HARDWARE_CONTROL_DISABLED | HARDWARE_CONTROL_GPIO_DISABLED
+#warning "DEBUG_HARDWARE_CONTROL_DISABLED"
+  return;
+#endif
+  HAL_GPIO_WritePin (GPIOx, GPIO_Pin, PinState);
+}
+
+static HAL_StatusTypeDef
+machine_SPI_Transmit (SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size, uint32_t Timeout)
+{
+#if DEBUG_HARDWARE_CONTROL_DISABLED | HARDWARE_CONTROL_SPI_DISABLED
+#warning "DEBUG_HARDWARE_CONTROL_DISABLED"
+  return HAL_OK;
+#endif
+  return HAL_SPI_Transmit (hspi, pData, Size, Timeout);
+}
+
 /***
  * Keep this to avoid mistake from values
  * channel 0x00 -> DAC_CHANNEL_1
@@ -145,6 +165,10 @@ send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, Circular
 static void
 machine_DAC_set_and_start (uint8_t channel, uint16_t value)
 {
+#if DEBUG_HARDWARE_CONTROL_DISABLED | HARDWARE_CONTROL_DAC_DISABLED
+#warning "DEBUG_HARDWARE_CONTROL_DISABLED"
+  return;
+#endif
   switch (channel)
     {
     case DAC_CHANNEL_1:
@@ -205,6 +229,10 @@ machine_DAC_set_and_start (uint8_t channel, uint16_t value)
 static void
 machine_DAC_set (uint8_t channel, uint16_t value)
 {
+#if DEBUG_HARDWARE_CONTROL_DISABLED | HARDWARE_CONTROL_DAC_DISABLED
+#warning "DEBUG_HARDWARE_CONTROL_DISABLED"
+  return;
+#endif
   switch (channel)
     {
     case DAC_CHANNEL_1:
@@ -266,6 +294,10 @@ machine_DAC_set_si (uint8_t channel, float voltage)
 static HAL_StatusTypeDef
 machine_DAC_switch (uint8_t channel, uint8_t enable)
 {
+#if DEBUG_HARDWARE_CONTROL_DISABLED | HARDWARE_CONTROL_DAC_DISABLED
+#warning "DEBUG_HARDWARE_CONTROL_DISABLED"
+  return HAL_OK;
+#endif
   switch (channel)
     {
     case DAC_CHANNEL_1:
@@ -387,10 +419,10 @@ machine_main_init_0 (void)
 }
 
 uint8_t
-get_byte_of_message_number (uint8_t msg_index, uint8_t msg_index_max)
+get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
 {
-  if ((msg_index > 15) | (msg_index_max > 15)) return 0;
-  return (0xF0 & (msg_index_max << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
+  if ((msg_index > 15) | (total_msg_count > 15)) return 0;
+  return (0xF0 & (total_msg_count << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
 }
 
 static uint32_t value0;
@@ -399,7 +431,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 {
   CAN_Message_t tmp;
   uint8_t command = (uint8_t)msg.Data[0];
-  uint32_t msg_id = (1 << 10) | (CAN_ID << 2); // Master bit and own receiver ID
+  uint32_t msg_id = CAN_ID_IN_MSG;
   tmp.timestamp = HAL_GetTick ();
   tmp.id = msg_id;
   tmp.data[0] = command; // Standard reply [function]
@@ -519,7 +551,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
       }
 
       /**** 0x40 set periodic report ****/
-    case AFECOMMAND_setSensorDataSi_periodic_last:
+    case AFECommand_setSensorDataSi_periodic_last:
       {
 
 	break;
@@ -538,7 +570,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    break;
 	  }
 	memcpy (&spiData[0], &msg.Data[3], spiDataLen);
-	tmp.data[2] = HAL_SPI_Transmit (&hspi1, &spiData[0], spiDataLen, TIMEOUT_SPI1_MS);
+	tmp.data[2] = machine_SPI_Transmit (&hspi1, &spiData[0], spiDataLen, TIMEOUT_SPI1_MS);
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 #warning "Test SPI!" // TODO Test SPI
 	break;
@@ -548,7 +580,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator(msg.Data[2]);
 	uint32_t GPIO_Pin = 1 << msg.Data[3];
 	uint8_t PinState = msg.Data[4];
-	HAL_GPIO_WritePin(GPIOx, GPIO_Pin, PinState);
+	machine_GPIO_WritePin(GPIOx, GPIO_Pin, PinState);
 	tmp.data[2] = msg.Data[2];
 	tmp.data[3] = msg.Data[3];
 	tmp.data[4] = msg.Data[4];
@@ -691,29 +723,28 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
       {
 	uint8_t channel = msg.Data[2];
 	uint8_t status =  msg.Data[3];
+	tmp.data[2] = channel;
 	switch (channel)
 	  {
 	  case AFECommandSubdevice_master:
 	    {
-	      tmp.data[4] = machine_DAC_switch (DAC_CHANNEL_1, status);
+	      tmp.data[3] = machine_DAC_switch (DAC_CHANNEL_1, status);
 	      break;
 	    }
 	  case AFECommandSubdevice_slave:
 	    {
-	      machine_DAC_switch (DAC_CHANNEL_2, status);
+	      tmp.data[3] = machine_DAC_switch (DAC_CHANNEL_2, status);
 	      break;
 	    }
 	  case AFECommandSubdevice_both:
 	    {
-	      machine_DAC_switch (0x11, status);
+	      tmp.data[3] = machine_DAC_switch (0x11, status);
 	      break;
 	    }
 	  default:
 	    break;
 	  }
-	tmp.data[2] = channel;
-//	tmp.data[3] = status;
-	tmp.dlc = 2 + 3;
+	tmp.dlc = 2 + 2;
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
@@ -753,7 +784,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setAveragingDt_ms: // set averagingSettings.dt_ms
+    case AFECommand_setChannel_dt_ms:
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].dt_ms, &msg.Data[3], sizeof(uint32_t));
@@ -764,7 +795,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setAveragingMaxDt_ms: // set averagingSettings.max_dt_ms
+    case AFECommand_setAveraging_max_dt_ms: // set averagingSettings.max_dt_ms
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].max_dt_ms, &msg.Data[3], sizeof(uint32_t));
@@ -775,7 +806,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setAveragingMultiplicator: // set averagingSettings.multiplicator
+    case AFECommand_setChannel_multiplicator: // set averagingSettings.multiplicator
       {
 	uint8_t channel = msg.Data[2];
 	memcpy (&channelSettings[channel].multiplicator, &msg.Data[3], sizeof(uint32_t));
@@ -851,6 +882,36 @@ machine_control (void)
 	  float voltage_for_SiPM = get_voltage_for_SiPM_x (average_Temperature,
 							   regulatorSettings_ptr);
 	  regulatorSettings_ptr->T_old = average_Temperature;
+#if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+	  CAN_Message_t tmp;
+	  tmp.id = CAN_ID_IN_MSG;
+	  tmp.timestamp = HAL_GetTick (); // for timeout
+	  tmp.data[0] = AFECommand_debug_machine_control;
+	  // Voltage
+	  tmp.data[1] = get_byte_of_message_number (0, 4);
+	  tmp.data[2] = channel;
+	  tmp.dlc = 2 + 1 + sizeof(float);
+	  memcpy (&tmp.data[3], &voltage_for_SiPM, sizeof(float));
+	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	  // Average temperature
+	  tmp.data[1] = get_byte_of_message_number (1, 4);
+	  tmp.data[2] = channel;
+	  tmp.dlc = 2 + 1 + sizeof(float);
+	  memcpy (&tmp.data[3], &average_Temperature, sizeof(float));
+	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	  // Old temperature
+	  tmp.data[1] = get_byte_of_message_number (2, 4);
+	  tmp.data[2] = channel;
+	  tmp.dlc = 2 + 1 + sizeof(float);
+	  memcpy (&tmp.data[3], &regulatorSettings_ptr->T_old, sizeof(float));
+	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	  // Timestamp
+	  tmp.data[1] = get_byte_of_message_number (3, 4);
+	  tmp.data[2] = channel;
+	  tmp.dlc = 2 + 1 + sizeof(uint32_t);
+	  memcpy (&tmp.data[3], &timestamp_ms, sizeof(uint32_t));
+	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+#endif
 	  switch (channel)
 	    {
 	    case 0:
@@ -952,7 +1013,7 @@ machine_main (void)
 
 static s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback;
 /* DMA Transfer Complete Callback */
-void
+void  __attribute__ ((optimize("-O3")))
 HAL_ADC_ConvCpltCallback (ADC_HandleTypeDef *hadc)
 {
   /* Append ADC values to buffers */

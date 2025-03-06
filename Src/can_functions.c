@@ -279,11 +279,10 @@ CAN_DequeueMessage (CircularBuffer_t *cb, CAN_Message_t *msg)
 }
 
 // Transmit handler (called periodically or in main loop)
-void
+void  __attribute__ ((optimize("-O3")))
 CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 {
   CAN_Message_t msg;
-  uint32_t tmstmp = HAL_GetTick ();
   for (; (CAN_IsBufferEmpty (&canTxBuffer) == 0)
 //	  && ((HAL_GetTick () - tmstmp) < CAN_TRANSMITHANDLER_LIFETIME_MS)
       ;)
