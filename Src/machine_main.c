@@ -156,6 +156,13 @@ machine_SPI_Transmit (SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size, ui
   return HAL_SPI_Transmit (hspi, pData, Size, Timeout);
 }
 
+static HAL_StatusTypeDef
+AD8402_Write (SPI_HandleTypeDef *hspi, uint8_t channel, uint8_t value, uint32_t timeout)
+{
+  uint16_t data = ((channel & 0x03) << 8) | (value & 0xFF);  // 10-bit format
+  return machine_SPI_Transmit (hspi, (uint8_t*) &data, 1, timeout);
+}
+
 /***
  * Keep this to avoid mistake from values
  * channel 0x00 -> DAC_CHANNEL_1
@@ -409,11 +416,15 @@ machine_main_init_0 (void)
       regulatorSettings[i0].dT = 1.0;
       regulatorSettings[i0].dU = 1.0;
       regulatorSettings[i0].T_old = regulatorSettings[i0].T_0;
-      regulatorSettings[i0].timestamp_ms_old = 0;
       regulatorSettings[i0].enabled = 0;
+      regulatorSettings[i0].ramp_bit_step = 1;
+      regulatorSettings[i0].ramp_bit_step_every_ms = 100;
+      regulatorSettings[i0].ramp_bit_step_timestamp_old_ms = 0;
+      regulatorSettings[i0].ramp_curent_voltage_set_bits = AFE_DAC_START;
+      regulatorSettings[i0].ramp_target_voltage_set_bits = AFE_DAC_START;
     }
 
-  /* Append ADC channel to regulator setings */
+  /* Append ADC channel to regulator settings */
   regulatorSettings[0].temperature_channelSettings_ptr = &channelSettings[7];
   regulatorSettings[1].temperature_channelSettings_ptr = &channelSettings[6];
 }
@@ -573,6 +584,15 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[2] = machine_SPI_Transmit (&hspi1, &spiData[0], spiDataLen, TIMEOUT_SPI1_MS);
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 #warning "Test SPI!" // TODO Test SPI
+	break;
+      }
+    case AFECommand_setAD8402Value_byte:
+      {
+	uint8_t channel = msg.Data[2];
+	uint8_t value = msg.Data[3];
+	tmp.data[2] = channel;
+	tmp.data[3] = value;
+	tmp.data[4] = AD8402_Write(&hspi1, channel, value, TIMEOUT_SPI1_MS);
 	break;
       }
     case AFECommand_writeGPIO:
@@ -748,6 +768,11 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
+    case AFECommand_setDACRampOneBytePerMillisecond_ms:
+      {
+#warning "Implement and test this"
+	break;
+      }
 
       /*********** 0xD0 ************/
       /* Set setting [Data[0]] for adc channel [Data[2]] by uint32_t value[Data[3:7]]  */
@@ -856,10 +881,9 @@ machine_calculate_averageValues (float *here)
 /***
  * Here is the temperature loop
  */
-void
+void __attribute__ ((optimize("-O3")))
 machine_control (void)
 {
-  uint32_t timestamp_ms = HAL_GetTick ();
 
   /* Calculate values for DAC -- active part of the Temperature Loop */
   for (uint8_t channel = 0; channel < 2; ++channel)
@@ -869,9 +893,11 @@ machine_control (void)
 	{
 	  continue;
 	}
+      uint32_t timestamp_ms = HAL_GetTick ();
 
       float average_Temperature;
-      if(get_average_atSettings(regulatorSettings_ptr->temperature_channelSettings_ptr, &average_Temperature) == 0)
+      if (get_average_atSettings (regulatorSettings_ptr->temperature_channelSettings_ptr,
+				  &average_Temperature) == 0)
 	{
 	  /* Skip if cannot calculate average */
 	  continue;
@@ -912,23 +938,51 @@ machine_control (void)
 	  memcpy (&tmp.data[3], &timestamp_ms, sizeof(uint32_t));
 	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
 #endif
-	  switch (channel)
+	  regulatorSettings_ptr->ramp_target_voltage_set_bits =
+	      machine_DAC_convert_mv_to_dac_value (voltage_for_SiPM);
+	}
+      if ((timestamp_ms - regulatorSettings_ptr->ramp_bit_step_timestamp_old_ms)
+	  >= regulatorSettings_ptr->ramp_bit_step_every_ms)
+	{
+	  regulatorSettings_ptr->ramp_bit_step_timestamp_old_ms = timestamp_ms;
+	  if (regulatorSettings_ptr->ramp_curent_voltage_set_bits
+	      != regulatorSettings_ptr->ramp_target_voltage_set_bits)
 	    {
-	    case 0:
-	      {
-		machine_DAC_set ( DAC_CHANNEL_1,
-				 machine_DAC_convert_mv_to_dac_value (voltage_for_SiPM));
-
-		break;
-	      }
-	    case 1:
-	      {
-		machine_DAC_set ( DAC_CHANNEL_2,
-				 machine_DAC_convert_mv_to_dac_value (voltage_for_SiPM));
-		break;
-	      }
-	    default:
-	      break;
+	      if (regulatorSettings_ptr->ramp_curent_voltage_set_bits
+		  < regulatorSettings_ptr->ramp_target_voltage_set_bits)
+		{
+		  regulatorSettings_ptr->ramp_curent_voltage_set_bits +=
+		      regulatorSettings_ptr->ramp_bit_step;
+		}
+	      else
+		{
+		  regulatorSettings_ptr->ramp_curent_voltage_set_bits -=
+		      regulatorSettings_ptr->ramp_bit_step;
+		}
+	      if (regulatorSettings_ptr->ramp_curent_voltage_set_bits >= AFE_DAC_MAX)
+		{
+		  regulatorSettings_ptr->ramp_curent_voltage_set_bits = AFE_DAC_MAX;
+		}
+	      switch (channel)
+		{
+		case 0:
+		  {
+		    machine_DAC_set (DAC_CHANNEL_1,
+				     regulatorSettings_ptr->ramp_curent_voltage_set_bits);
+		    break;
+		  }
+		case 1:
+		  {
+		    machine_DAC_set (DAC_CHANNEL_2,
+				     regulatorSettings_ptr->ramp_curent_voltage_set_bits);
+		    break;
+		  }
+		default:
+		  {
+		    Error_Handler();
+		    break;
+		  }
+		}
 	    }
 	}
     }
@@ -975,12 +1029,6 @@ machine_main (void)
 //	htim1.Instance->ARR = 50000-1;
 	htim1.Instance->ARR = 10000 - 1;
 
-
-	for (uint8_t i0 = 0; i0 < 20; ++i0)
-	  {
-	    HAL_Delay (50);
-	    blink1 ();
-	  }
 	break;
       }
     case e_machine_main_idle:
@@ -992,17 +1040,11 @@ machine_main (void)
 	  {
 	    canRxFlag = 0;
 	    /* Execute command */
-//	    blink1();
 	    can_execute (can_msg_received, &hcan);
 	  }
 
 	machine_control ();
 	machine_periodic_report();
-//	if((HAL_GetTick() - last_blink) > 250)
-//	  {
-//	    last_blink = HAL_GetTick();
-//	    blink1();
-//	  }
 	break;
       }
     default:

@@ -14,6 +14,9 @@
 #define ADC_NUMBER_OF_CHANNELS 8
 #define NUMBER_OF_SUBDEVICES 2
 
+#define AFE_DAC_MAX 0xFFF
+#define AFE_DAC_START 0xFFF
+
 #define TIMEOUT_SPI1_MS 5000
 
 #define USE_SHIFTING_IN_SetPinFromArray 0

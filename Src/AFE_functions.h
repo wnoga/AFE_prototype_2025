@@ -32,6 +32,7 @@ typedef enum
   AFECommand_setSensorDataSiAndTimestamp_periodic_average = 0x43,
 
   AFECommand_transmitSPIData = 0xA0,
+  AFECommand_setAD8402Value_byte = 0xA1,
   AFECommand_writeGPIO = 0xA2,
 
   AFECommand_setTemperatureLoopForChannelState_bySubdevice = 0xC0,
@@ -40,6 +41,7 @@ typedef enum
   AFECommand_setDACValueSi_bySubdevice = 0xC3,
   AFECommand_stopTemperatureLoopForAllChannels = 0xC4,
   AFECommand_setDAC_bySubdevice = 0xC5,
+  AFECommand_setDACRampOneBytePerMillisecond_ms = 0xC6,
 
   AFECommand_setAveragingMode = 0xD0,
   AFECommand_setAveragingAlpha = 0xD1,
@@ -125,8 +127,13 @@ typedef struct
   float U_cor;
   /* Old temperature value */
   float T_old;
-  uint32_t timestamp_ms_old;
   int8_t enabled;
+
+  uint16_t ramp_bit_step;
+  uint32_t ramp_bit_step_every_ms;
+  uint32_t ramp_bit_step_timestamp_old_ms;
+  uint16_t ramp_curent_voltage_set_bits;
+  uint16_t ramp_target_voltage_set_bits;
 } s_regulatorSettings;
 
 

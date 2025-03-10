@@ -20,7 +20,7 @@ extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_adc;
 
-#define CAN_ID 8
+#define CAN_ID 35
 #define CAN_ID_IN_MSG ((1<<10) | (CAN_ID << 2))
 extern const uint8_t verArr[];
 extern const size_t verArrLen;

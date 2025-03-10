@@ -6,6 +6,7 @@
  */
 
 #include "AFE_functions.h"
+#include <stm32f0xx_hal.h>
 #include <math.h>
 
 /* Driver */
@@ -248,78 +249,5 @@ get_average_atSettings (s_channelSettings *a, float *here)
   return get_average_from_buffer (a->buffer_ADC, a->max_N, HAL_GetTick (), a->max_dt_ms,
 				  a->averaging_method, here, a->alpha, a->multiplicator);
 }
-//static size_t frame_cnt;
-//static s_parser_CAN_frame output;
-//e_parser_return
-//parser_execute_machnie (s_parser_CAN_frame *input)
-//{
-//  e_parser_return retStatus = e_parser_return_OK;
-//  if (input->flag == e_parser_CAN_frame_flag_none)
-//    {
-//      parser_CAN_printf ("Frame executed\n");
-//      return retStatus;
-//    }
-//  if (0 == (input->flag & e_parser_CAN_frame_flag_executing))
-//    {
-//      // Reset frame_cnt if new frame is executing
-//      frame_cnt = 0;
-//      output.command = input->command;
-//      memset (&output.data[0], 0, sizeof(output.data) * sizeof(output.data[0]));
-//    }
-//  input->flag = e_parser_CAN_frame_flag_executing;
-//  switch (input->command)
-//    {
-//    case e_parser_command_getSerialNumber:
-//      {
-//	retStatus = getSerialNumber (input, &output, &frame_cnt);
-//	break;
-//      }
-//    case e_parser_command_getVersion:
-//      {
-//	retStatus = getVersion (input, &output, &frame_cnt);
-//	break;
-//      }
-//    case e_parser_command_reset:
-//      {
-//	retStatus = resetAFE (input->data[0], &output);
-//	break;
-//      }
-//    case e_parser_command_resetAll:
-//      {
-//	retStatus = resetAFE (0b11, &output);
-//	break;
-//      }
-//    case 0x1234:
-//      {
-//	parser_CAN_printf ("xxxxxx\n");
-//	parser_CAN_printf ("\n");
-//	break;
-//      }
-//    default:
-//      {
-//	break;
-//      }
-//    }
-//
-//
-//  switch (retStatus)
-//    {
-//    case e_parser_return_ERROR:
-//      {
-//	parser_CAN_ErrorHandler ();
-//	input->flag = e_parser_CAN_frame_flag_none;
-//	input->ID = 0;
-//	break;
-//      }
-//    case e_parser_return_OK:
-//      {
-//	input->flag = e_parser_CAN_frame_flag_none;
-//	input->ID = 0;
-//	break;
-//      }
-//    default:
-//      break;
-//    }
-//  return retStatus;
-//}
+
 
