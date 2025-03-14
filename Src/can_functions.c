@@ -101,10 +101,6 @@ is_this_msg_for_me (CanRxMsgTypeDef *rxCanMsg, uint8_t own_id)
     {
       return 0;
     }
-//  if (rxCanMsg->StdId == CAN_ID) /* FIXME Delete this IF on production */
-//    {
-//      return 1;
-//    }
   if (own_id == (0xFF & (rxCanMsg->StdId >> 2)))
     {
       return 1;
@@ -112,13 +108,13 @@ is_this_msg_for_me (CanRxMsgTypeDef *rxCanMsg, uint8_t own_id)
   return 0;
 }
 
-void can_machine_new_message_received(CanRxMsgTypeDef *new_msg)
+void __attribute__ ((optimize("-O3")))
+can_machine_new_message_received (CanRxMsgTypeDef *new_msg)
 {
-  is_this_msg_for_me(new_msg, CAN_ID);
-  can_msg_received.timestamp = HAL_GetTick();
+  is_this_msg_for_me (new_msg, CAN_ID);
+  can_msg_received.timestamp = HAL_GetTick ();
   can_msg_received.DLC = new_msg->DLC;
-//  can_msg_recieved.StdId = new_msg->StdId;
-  memcpy(&can_msg_received.Data[0],&new_msg->Data[0],new_msg->DLC);
+  memcpy (&can_msg_received.Data[0], &new_msg->Data[0], new_msg->DLC);
 }
 
 /**
@@ -127,7 +123,7 @@ void can_machine_new_message_received(CanRxMsgTypeDef *new_msg)
  * @param own_id The device's own ID (8-bit receiver ID)
  * @return HAL_StatusTypeDef status (HAL_OK if successful)
  */
-HAL_StatusTypeDef
+HAL_StatusTypeDef __attribute__ ((cold, optimize("-Os")))
 configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id)
 {
   CAN_FilterConfTypeDef sFilterConfig;
@@ -145,11 +141,8 @@ configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id)
 
   // Build Filter Mask to filter by Master bit and Receiver ID
   uint32_t filter_mask = ((1 << 10) | (0xFF << 2));  // Mask for Master bit and receiver ID bits
-//  filter_mask &=~(0x0003); // clear last two bits from mask (used for communication purposes)
 
-//  // Master bit should be checked if is 0, otherwise message should be rejected
-//  filter_id = 0;
-//  filter_mask = 0;
+  /* Master bit should be checked if is 0, otherwise message should be rejected */
 
   // Configure filter parameters
   sFilterConfig.BankNumber = 14;
@@ -195,6 +188,10 @@ HAL_CAN_TxCpltCallback (CAN_HandleTypeDef *hcan)
 {
   CAN_TransmitCallback (hcan);
 }
+
+/***
+ * TODO Change behavior when CAN have an error
+ */
 void
 HAL_CAN_ErrorCallback (CAN_HandleTypeDef *hcan)
 {
@@ -213,14 +210,14 @@ CAN_InitBuffer (CircularBuffer_t *cb)
 }
 
 // Check if buffer is full
-int8_t
+inline int8_t __attribute__ ((always_inline, optimize("-O3")))
 CAN_IsBufferFull (CircularBuffer_t *cb)
 {
   return cb->count == CAN_BUFFER_SIZE;
 }
 
 // Check if buffer is empty
-int8_t
+inline int8_t __attribute__ ((always_inline, optimize("-O3")))
 CAN_IsBufferEmpty (CircularBuffer_t *cb)
 {
   return cb->count == 0;
@@ -247,11 +244,14 @@ CAN_GetMessage (CircularBuffer_t *cb, CAN_Message_t *msg)
     {
       return 0; // Buffer is empty
     }
-  *msg = cb->buffer[cb->tail];
-  return 1;
+  else
+    {
+      *msg = cb->buffer[cb->tail];
+      return 1;
+    }
 }
 
-int8_t
+int8_t __attribute__ ((optimize("-O3")))
 CAN_DeleteMessage (CircularBuffer_t *cb)
 {
   if (CAN_IsBufferEmpty (cb))
@@ -328,7 +328,7 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 }
 
 // Callback for transmission complete (called by interrupt)
-void
+void __attribute__ ((optimize("-O3")))
 CAN_TransmitCallback (CAN_HandleTypeDef *hcan)
 {
   CAN_DeleteMessage(&canTxBuffer);
@@ -412,7 +412,7 @@ can_machine (void)
     }
 }
 
-void
+void __attribute__ ((optimize("-O3")))
 HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
 {
   if (is_this_msg_for_me(hcan->pRxMsg, CAN_ID) && (hcan->pRxMsg->DLC <= 8))

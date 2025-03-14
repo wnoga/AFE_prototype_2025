@@ -52,27 +52,15 @@
 /******************************************************************************/
 
 #include "main.h"
-#include "nica.h"
+//#include "nica.h"
 
 #include "stm32f0xx_hal.h"
-//#include "stm32f0xx_hal_adc.h"
-#include "stm32f0xx_hal_spi.h"
-
-#include "usb_device.h"
-#include "usbd_cdc_if.h"
-
-#include "pdac/inc/pdac.h"
-#include "padc/inc/padc.h"
 
 #include "slcan/slcan.h"
-#include "slcan/slcan_additional.h"
+//#include "slcan/slcan_additional.h"
 
-//#include "can_functions.h"
 #include "machine_main.h"
 
-
-// 1. poprawic, gdy ponownie konfigurujemy petle bez wylaczenia
-// 2. przy zatrzymaniu petli wylaczac napiecie
 
 /******************************************************************************/
 /** Version                                                                  **/
@@ -80,8 +68,6 @@
 #define verH 0
 #define verL 2
 #define verD 9
-
-//#define CAN_ID 12
 
 const uint8_t verArr[] =
 {
@@ -148,7 +134,7 @@ static void MX_GPIO_Init(void);
 static void MX_CAN_Init(void);
 static void MX_IWDG_Init(void);
 static void MX_ADC_Init(void);
-//static void MX_DAC_Init(void);
+static void MX_DAC_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
@@ -159,54 +145,6 @@ blink_main(void)
 {
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
 }
-
-/** CAN communication **/
-static void CANRQST_GetVer(void);
-static void CANRQST_GetUID0(void);
-static void CANRQST_GetUID1(void);
-static void CANRQST_GetUID2(void);
-static void CANRQST_GetADC1(void);
-static void CANRQST_GetADC2(void);
-static void CANRQST_GetTemp(void);
-static void CANRQST_SetDAC(uint16_t ch1, uint16_t ch2);
-static void CANRQST_SetCtrlReg01(uint32_t ctrlReg);
-static void CANRQST_ClrCtrlReg01(uint32_t ctrlReg);
-static void CANRQST_GetCtrlReg01();
-static void CANRQST_GetCtrlReg02(uint32_t *data);
-static void CANRQST_SetDigRes(uint8_t *data);
-static void CANRQST_GetADC1avg(void);
-static void CANRQST_GetADC2avg(void);
-static void CANRQST_GetADC3avg(void);
-static void CANRQST_GetTempAvg(void);
-
-// Control Temperature Loop
-static void CANRQST_SetTempLoopCtrl();
-
-sipmCtrlLoop_t sipmCtrlLoop[2];
-
-// TempLoopArgs[0] - Vset
-// TempLoopArgs[1] - Vdelta
-// TempLoopArgs[2] - Tdelta
-// TempLoopArgs[3] - FLen
-
-// przerwanie
-
-uint8_t CtrlTempLoopInt;
-uint8_t CtrlTempLoopOnPrev[2];
-
-uint16_t intMainCnt;
-#define INT_MAX_CNT 256
-
-/*
-uint16_t TempLoopArgs[2][4];
-uint16_t tempBuf[2][128];
-uint16_t vSetAct[2];
-uint16_t tSetAct[2];
-uint32_t sumFil[2];
-*/
-
-/** ADC **/
-static void getADC();
 
 /** UID **/
 static void getUID(void);
@@ -238,19 +176,10 @@ static const ctrlReg01_t ctrlReg01_def[CTRL_REG_01_LEN] =
     { GPIOB,   GPIO_PIN_14 }, // EN_CAL_PULSE1
 };
 
-uint32_t ctrlReg02;
 uint32_t testg;
 /******************************************************************************/
 /** End Of Declarations                                                      **/
 /******************************************************************************/
-///* DMA Transfer Complete Callback */
-//void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-////  blink1();
-////    for (uint8_t i = 0; i < DMA_BUFFER_SIZE; i++) {
-////        circular_buffer[circular_buffer_index][i] = dma_buffer[i];
-////    }
-////    circular_buffer_index = (circular_buffer_index + 1) % CIRCULAR_BUFFER_SIZE;
-//}
 
 void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
 {
@@ -264,10 +193,9 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
     }
   else if (htim == &htim2)
     {
-      CtrlTempLoopInt = 1;
     }
 }
-volatile uint32_t software_watchdog_1;
+
 /******************************************************************************/
 /******************************************************************************/
 /******************************************************************************/
@@ -278,19 +206,6 @@ volatile uint32_t software_watchdog_1;
   */
 int main(void)
 {
-    uint32_t tmp1;
-    uint32_t tmp2;
-    uint16_t tmp1_u16;
-    uint16_t tmp2_u16;
-    uint32_t test;
-
-    software_watchdog_1 = 0;
-
-    ctrlReg02 = 0;
-    CtrlTempLoopOnPrev[0] = 0;
-    CtrlTempLoopOnPrev[1] = 0;
-    intMainCnt = 0;
-    
     HAL_Init();
 
     SystemClock_Config();
@@ -301,14 +216,8 @@ int main(void)
     MX_DMA_Init();
     MX_CAN_Init();
 //    MX_IWDG_Init();
-    //MX_ADC_Init();
 
-    //ADC init
-//    PADC_init(&hadc);
-
-    //DAC init
-    PDAC_init(&hdac);
-    PDAC_startChAll(&hdac);
+    MX_DAC_Init();
 
     MX_SPI1_Init();
     MX_TIM2_Init();
@@ -323,7 +232,6 @@ int main(void)
     hcan.pRxMsg = &CanRxBuffer;
 
     canRxFlags.flags.byte = 0;
-    software_watchdog_1 = HAL_GetTick();
 
     machine_main_init_0();
     while(1)
@@ -332,562 +240,7 @@ int main(void)
       }
     NVIC_SystemReset();
 
-    /* *************************************** */
-
-  while (1)
-    {
-      if (canRxFlags.flags.byte != 0)
-	{
-	  canRxFlags.flags.byte = 0;
-	  for (uint8_t i0 = 0; i0 < 3; ++i0)
-	    {
-	      HAL_Delay (50);
-	      blink1();
-	    }
-	  can_machine_new_message_received(hcan.pRxMsg);
-	  CANRQST_GetUID0();
-	  HAL_CAN_Receive_IT(&hcan, CAN_FIFO0);
-	}
-//	HAL_IWDG_Refresh(&hiwdg);
-//	can_machine();
-      __asm__("");
-    }
-
-//    modify_aurt_as_test_led();
-
-    while (1)
-    {
-
-       getADC();
-
-       if (canRxFlags.flags.byte != 0)
-       {
-
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x01))
-           {
-               CANRQST_GetVer();
-           }
-
-           if( hcan.pRxMsg->Data[0] == 0x00 && hcan.pRxMsg->Data[1] == 0x02)
-           {
-        	   CANRQST_GetUID0();
-           }
-
-           if( hcan.pRxMsg->Data[0] == 0x00 && hcan.pRxMsg->Data[1] == 0x03)
-           {
-        	   CANRQST_GetUID1();
-           }
-
-           if( hcan.pRxMsg->Data[0] == 0x00 && hcan.pRxMsg->Data[1] == 0x04)
-           {
-        	   CANRQST_GetUID2();
-           }
-
-           // *** ADC & DAC *** //
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x10))
-           {
-               CANRQST_GetADC1();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x11))
-           {
-               CANRQST_GetADC2();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x12))
-           {
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 8) | (hcan.pRxMsg->Data[3] << 0);
-
-               tmp2 = 0;
-               tmp2 = (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               CANRQST_SetDAC(tmp1, tmp2);
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x13))
-           {
-               CANRQST_GetTemp();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x14))
-           {
-               CANRQST_GetADC1avg();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x15))
-           {
-               CANRQST_GetADC2avg();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x16))
-           {
-               CANRQST_GetADC3avg();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x17))
-           {
-        	   CANRQST_GetTempAvg();
-           }
-
-           // *** General GPIO ctrl bits *** //
-           
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x40))
-           {
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-               CANRQST_SetCtrlReg01(tmp1);
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x41))
-           {
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-               CANRQST_ClrCtrlReg01(tmp1);
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x42))
-           {
-               CANRQST_GetCtrlReg01();
-           }
-
-           // *** General ctrl func. bits *** //
-           // set bit
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x43))
-           {
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               for (int i = 0; i < 32; i++)
-               {
-                   if ((tmp1 >> i) & 0x1)
-                   {
-                       ctrlReg02 |= (1 << i);
-                   }
-               }
-
-               hcan.pTxMsg->StdId = CAN_ID;
-               hcan.pTxMsg->IDE = CAN_ID_STD;
-               hcan.pTxMsg->RTR = CAN_RTR_DATA;
-               hcan.pTxMsg->DLC = 6;
-               hcan.pTxMsg->Data[0] = 0x00;
-               hcan.pTxMsg->Data[1] = 0x43;
-               hcan.pTxMsg->Data[2] = (ctrlReg02 >> 24);
-               hcan.pTxMsg->Data[3] = (ctrlReg02 >> 16);
-               hcan.pTxMsg->Data[4] = (ctrlReg02 >>  8);
-               hcan.pTxMsg->Data[5] = (ctrlReg02 >>  0);
-
-               transmitStdMy();
-           }
-
-           // clear bit
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x44))
-           {
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               for (int i = 0; i < 32; i++)
-                   if ((tmp1 >> i) & 0x1)
-                       ctrlReg02 &= ~(0x1 << i);
-
-               for (int i = 0; i < 2; i++)
-                   if (!((ctrlReg02 >> i) & 0x1))
-                       CtrlTempLoopOnPrev[i] = 0;
-
-               hcan.pTxMsg->StdId = CAN_ID;
-               hcan.pTxMsg->IDE = CAN_ID_STD;
-               hcan.pTxMsg->RTR = CAN_RTR_DATA;
-               hcan.pTxMsg->DLC = 6;
-               hcan.pTxMsg->Data[0] = 0x00;
-               hcan.pTxMsg->Data[1] = 0x44;
-               hcan.pTxMsg->Data[2] = (ctrlReg02 >> 24);
-               hcan.pTxMsg->Data[3] = (ctrlReg02 >> 16);
-               hcan.pTxMsg->Data[4] = (ctrlReg02 >>  8);
-               hcan.pTxMsg->Data[5] = (ctrlReg02 >>  0);
-
-               transmitStdMy();
-           }
-
-           // *** Temp Loop *** //
-           // ch[0]
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x80))
-           {
-               sipmCtrlLoop[0].vSet = (hcan.pRxMsg->Data[2] << 8) | (hcan.pRxMsg->Data[3] << 0);
-               sipmCtrlLoop[0].vDelta = (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               hcan.pTxMsg->StdId = CAN_ID;
-               hcan.pTxMsg->IDE = CAN_ID_STD;
-               hcan.pTxMsg->RTR = CAN_RTR_DATA;
-               hcan.pTxMsg->DLC = 6;
-               hcan.pTxMsg->Data[0] = 0x00;
-               hcan.pTxMsg->Data[1] = 0x80;
-               hcan.pTxMsg->Data[2] = (sipmCtrlLoop[0].vSet & 0xFF00) >> 8;
-               hcan.pTxMsg->Data[3] = sipmCtrlLoop[0].vSet & 0x00FF;
-               hcan.pTxMsg->Data[4] = (sipmCtrlLoop[0].vDelta & 0xFF00) >> 8;
-               hcan.pTxMsg->Data[5] = sipmCtrlLoop[0].vDelta & 0x00FF;
-
-               transmitStdMy();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x81))
-           {
-              sipmCtrlLoop[0].tDelta = (hcan.pRxMsg->Data[2] << 8) | (hcan.pRxMsg->Data[3] << 0);
-              sipmCtrlLoop[0].filLen  = (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-              hcan.pTxMsg->StdId = CAN_ID;
-              hcan.pTxMsg->IDE = CAN_ID_STD;
-              hcan.pTxMsg->RTR = CAN_RTR_DATA;
-              hcan.pTxMsg->DLC = 6;
-              hcan.pTxMsg->Data[0] = 0x00;
-              hcan.pTxMsg->Data[1] = 0x81;
-              hcan.pTxMsg->Data[2] = (sipmCtrlLoop[0].tDelta & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[3] = sipmCtrlLoop[0].tDelta & 0x00FF;
-              hcan.pTxMsg->Data[4] = (sipmCtrlLoop[0].filLen & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[5] = sipmCtrlLoop[0].filLen & 0x00FF;
-
-              transmitStdMy();
-           }
-
-           // ch[1]
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x82))
-           {
-               sipmCtrlLoop[1].vSet = (hcan.pRxMsg->Data[2] << 8) | (hcan.pRxMsg->Data[3] << 0);
-               sipmCtrlLoop[1].vDelta = (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               hcan.pTxMsg->StdId = CAN_ID;
-               hcan.pTxMsg->IDE = CAN_ID_STD;
-               hcan.pTxMsg->RTR = CAN_RTR_DATA;
-               hcan.pTxMsg->DLC = 6;
-               hcan.pTxMsg->Data[0] = 0x00;
-               hcan.pTxMsg->Data[1] = 0x82;
-               hcan.pTxMsg->Data[2] = (sipmCtrlLoop[1].vSet & 0xFF00) >> 8;
-               hcan.pTxMsg->Data[3] = sipmCtrlLoop[1].vSet & 0x00FF;
-               hcan.pTxMsg->Data[4] = (sipmCtrlLoop[1].vDelta & 0xFF00) >> 8;
-               hcan.pTxMsg->Data[5] = sipmCtrlLoop[1].vDelta & 0x00FF;
-
-               transmitStdMy();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0x83))
-           {
-              sipmCtrlLoop[1].tDelta = (hcan.pRxMsg->Data[2] << 8) | (hcan.pRxMsg->Data[3] << 0);
-              sipmCtrlLoop[1].filLen  = (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-              hcan.pTxMsg->StdId = CAN_ID;
-              hcan.pTxMsg->IDE = CAN_ID_STD;
-              hcan.pTxMsg->RTR = CAN_RTR_DATA;
-              hcan.pTxMsg->DLC = 6;
-              hcan.pTxMsg->Data[0] = 0x00;
-              hcan.pTxMsg->Data[1] = 0x83;
-              hcan.pTxMsg->Data[2] = (sipmCtrlLoop[1].tDelta & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[3] = sipmCtrlLoop[1].tDelta & 0x00FF;
-              hcan.pTxMsg->Data[4] = (sipmCtrlLoop[1].filLen & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[5] = sipmCtrlLoop[1].filLen & 0x00FF;
-
-              transmitStdMy();
-           }
-
-           // *** Others *** //
-           if ((hcan.pRxMsg->Data[0] == 0x00) && (hcan.pRxMsg->Data[1] == 0xA0))
-           {
-               uint8_t data[2];
-               data[0] = hcan.pRxMsg->Data[3];
-               data[1] = hcan.pRxMsg->Data[2];
-               CANRQST_SetDigRes(data);
-           }
-
-           // testy dla tempCtrlLoop
-           if ((hcan.pRxMsg->Data[0] == 0x01) && (hcan.pRxMsg->Data[1] == 0x10))
-           {
-
-              tmp1 = 0;
-              tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-              if ((tmp1 == 1) || (tmp1 == 2))
-            	  tmp1 = tmp1 - 1;
-              else
-            	  tmp1 = 0;
-
-              hcan.pTxMsg->StdId = CAN_ID;
-              hcan.pTxMsg->IDE = CAN_ID_STD;
-              hcan.pTxMsg->RTR = CAN_RTR_DATA;
-              hcan.pTxMsg->DLC = 8;
-              hcan.pTxMsg->Data[0] = 0x01;
-              hcan.pTxMsg->Data[1] = 0x10;
-              hcan.pTxMsg->Data[2] = (sipmCtrlLoop[tmp1].vDelta & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[3] = sipmCtrlLoop[tmp1].vDelta & 0x00FF;
-              hcan.pTxMsg->Data[4] = (sipmCtrlLoop[tmp1].tDelta & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[5] = sipmCtrlLoop[tmp1].tDelta & 0x00FF;
-              hcan.pTxMsg->Data[6] = (sipmCtrlLoop[tmp1].filLen & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[7] = sipmCtrlLoop[tmp1].filLen & 0x00FF;
-              transmitStdMy();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x01) && (hcan.pRxMsg->Data[1] == 0x11))
-           {
-
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               if ((tmp1 == 1) || (tmp1 == 2))
-             	  tmp1 = tmp1 - 1;
-               else
-             	  tmp1 = 0;
-
-        	  hcan.pTxMsg->StdId = CAN_ID;
-              hcan.pTxMsg->IDE = CAN_ID_STD;
-              hcan.pTxMsg->RTR = CAN_RTR_DATA;
-              hcan.pTxMsg->DLC = 8;
-              hcan.pTxMsg->Data[0] = 0x01;
-              hcan.pTxMsg->Data[1] = 0x11;
-              hcan.pTxMsg->Data[2] = (sipmCtrlLoop[tmp1].vSetAct & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[3] = sipmCtrlLoop[tmp1].vSetAct & 0x00FF;
-              hcan.pTxMsg->Data[4] = (sipmCtrlLoop[tmp1].tSetAct & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[5] = sipmCtrlLoop[tmp1].tSetAct & 0x00FF;
-              hcan.pTxMsg->Data[6] = (sipmCtrlLoop[tmp1].avgFil & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[7] = sipmCtrlLoop[tmp1].avgFil & 0x00FF;
-              transmitStdMy();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x01) && (hcan.pRxMsg->Data[1] == 0x12))
-           {
-
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               if ((tmp1 == 1) || (tmp1 == 2))
-             	  tmp1 = tmp1 - 1;
-               else
-             	  tmp1 = 0;
-
-              hcan.pTxMsg->StdId = CAN_ID;
-              hcan.pTxMsg->IDE = CAN_ID_STD;
-              hcan.pTxMsg->RTR = CAN_RTR_DATA;
-              hcan.pTxMsg->DLC = 6;
-              hcan.pTxMsg->Data[0] = 0x01;
-              hcan.pTxMsg->Data[1] = 0x12;
-              hcan.pTxMsg->Data[2] = (sipmCtrlLoop[tmp1].sumFil & 0xFF000000) >> 24;
-              hcan.pTxMsg->Data[3] = (sipmCtrlLoop[tmp1].sumFil & 0x00FF0000) >> 16;
-              hcan.pTxMsg->Data[4] = (sipmCtrlLoop[tmp1].sumFil & 0x0000FF00) >> 8;
-              hcan.pTxMsg->Data[5] = sipmCtrlLoop[tmp1].sumFil & 0x000000FF;
-              transmitStdMy();
-           }
-
-           if ((hcan.pRxMsg->Data[0] == 0x01) && (hcan.pRxMsg->Data[1] == 0x13))
-           {
-
-               tmp1 = 0;
-               tmp1 = (hcan.pRxMsg->Data[2] << 24) | (hcan.pRxMsg->Data[3] << 16) | (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               if ((tmp1 == 1) || (tmp1 == 2))
-             	  tmp1 = tmp1 - 1;
-               else
-             	  tmp1 = 0;
-
-              hcan.pTxMsg->StdId = CAN_ID;
-              hcan.pTxMsg->IDE = CAN_ID_STD;
-              hcan.pTxMsg->RTR = CAN_RTR_DATA;
-              hcan.pTxMsg->DLC = 7;
-              hcan.pTxMsg->Data[0] = 0x01;
-              hcan.pTxMsg->Data[1] = 0x13;
-              hcan.pTxMsg->Data[2] = (sipmCtrlLoop[tmp1].filNewPtr & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[3] = sipmCtrlLoop[tmp1].filNewPtr & 0x00FF;
-              hcan.pTxMsg->Data[4] = (sipmCtrlLoop[tmp1].filOldPtr & 0xFF00) >> 8;
-              hcan.pTxMsg->Data[5] = sipmCtrlLoop[tmp1].filOldPtr & 0x00FF;
-              hcan.pTxMsg->Data[6] = ctrlReg02 & 0x00FF;
-              transmitStdMy();
-           }
-
-           // symulowanie temperatury w celu weryfikacji petli
-           if ((hcan.pRxMsg->Data[0] == 0x01) && (hcan.pRxMsg->Data[1] == 0x14))
-           {
-
-               simTemp[0] = (hcan.pRxMsg->Data[2] << 8) | (hcan.pRxMsg->Data[3] << 0);
-               simTemp[1] = (hcan.pRxMsg->Data[4] << 8) | (hcan.pRxMsg->Data[5] << 0);
-
-               hcan.pTxMsg->StdId = CAN_ID;
-               hcan.pTxMsg->IDE = CAN_ID_STD;
-               hcan.pTxMsg->RTR = CAN_RTR_DATA;
-               hcan.pTxMsg->DLC = 6;
-               hcan.pTxMsg->Data[0] = 0x00;
-               hcan.pTxMsg->Data[1] = 0x43;
-               hcan.pTxMsg->Data[2] = (simTemp[0] >> 8);
-               hcan.pTxMsg->Data[3] = (simTemp[0] >> 0);
-               hcan.pTxMsg->Data[4] = (simTemp[1] >> 8);
-               hcan.pTxMsg->Data[5] = (simTemp[1] >> 0);
-
-               transmitStdMy();
-           }
-
-           // end
-           canRxFlags.flags.fifo1 = 0;
-           HAL_CAN_Receive_IT(&hcan, CAN_FIFO0);
-       }
-
-       // zbieranie danych z przetwornikow
-       if (CtrlTempLoopInt) {
-    	   if (intMainCnt == INT_MAX_CNT) {
-    		   for (int i = 0; i < ADC_CH_NR; i++) {
-    			   measFilter[i] = 0;
-    		   }
-
-    		   intMainCnt = 0;
-    	   }
-
-    	   // sumowanie probek dla kazdego pomiaru
-    	    for (int i = 0; i < ADC_CH_NR; i++) {
-    	    	measFilter[i] = measFilter[i] + (uint32_t) adc_raw[i];
-    	    }
-
-    	   intMainCnt++;
-
-    	   // wyznaczanie wartoscie sredniej
-    	   if (intMainCnt == INT_MAX_CNT) {
-    		   for (int i = 0; i < ADC_CH_NR; i++) {
-    			   measFilter_tmp[i] = measFilter[i];
-    			   measFilterOut[i] = (uint16_t) (measFilter[i] >> 8);
-    		   }
-    	   }
-
-
-		   // Control Temp. Loop
-		   // run only when is enabled and interrupt from timer
-
-		   // if (CtrlTempLoopInt)
-		   if (intMainCnt == INT_MAX_CNT)
-		   {
-			   // get Temp
-			   uint16_t temp[2];
-			   temp[0] = measFilterOut[7]; // adc_raw[7];
-			   temp[1] = measFilterOut[6]; // adc_raw[6];
-
-			   // check if loop is executed first time after start -> set values
-			   // for every channel independently
-			   for (int j = 0; j < 2; j++)
-			   {
-				   if ((ctrlReg02 >> j) & 0x1)
-				   {
-					   if (!CtrlTempLoopOnPrev[j])
-					   {
-						   // prepare input values
-						   sipmCtrlLoop[j].vSetAct = sipmCtrlLoop[j].vSet;
-						   sipmCtrlLoop[j].sumFil = 0;
-						   sipmCtrlLoop[j].filNewPtr = sipmCtrlLoop[j].filLen;
-						   sipmCtrlLoop[j].filOldPtr = 0;
-						   for (int i = 0; i < sipmCtrlLoop[j].filLen; i++)
-						   {
-							   sipmCtrlLoop[j].tempBuf[i] = temp[j];
-							   sipmCtrlLoop[j].sumFil += temp[j];
-						   }
-						   sipmCtrlLoop[j].tSetAct = sipmCtrlLoop[j].sumFil/sipmCtrlLoop[j].filLen; //temp[j];
-
-						   if (j == 0)
-						   {
-							   if (HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, sipmCtrlLoop[j].vSetAct) != HAL_OK)
-							   {
-								   Error_Handler();
-							   }
-							   if (HAL_DAC_Start(&hdac, DAC_CHANNEL_1) != HAL_OK)
-							   {
-								   Error_Handler();
-							   }
-						   }
-						   else
-						   {
-							   if (HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, sipmCtrlLoop[j].vSetAct) != HAL_OK)
-							   {
-								   Error_Handler();
-							   }
-							   if (HAL_DAC_Start(&hdac, DAC_CHANNEL_2) != HAL_OK)
-							   {
-								   Error_Handler();
-							   }
-						   }
-					   }
-					   else
-					   // normal run
-					   {
-						   // take new data and update buffer and filter sum value
-						   sipmCtrlLoop[j].tempBuf[sipmCtrlLoop[j].filNewPtr] = temp[j];
-						   sipmCtrlLoop[j].sumFil += temp[j] - sipmCtrlLoop[j].tempBuf[sipmCtrlLoop[j].filOldPtr];
-						   sipmCtrlLoop[j].filNewPtr++;
-						   if (sipmCtrlLoop[j].filNewPtr == TEMPFIL_BUF_LEN)
-							   sipmCtrlLoop[j].filNewPtr = 0;
-						   sipmCtrlLoop[j].filOldPtr++;
-						   if (sipmCtrlLoop[j].filOldPtr == TEMPFIL_BUF_LEN)
-							   sipmCtrlLoop[j].filOldPtr = 0;
-
-						   //
-						   tmp1_u16 = sipmCtrlLoop[j].sumFil/sipmCtrlLoop[j].filLen;
-						   sipmCtrlLoop[j].avgFil = sipmCtrlLoop[j].sumFil/sipmCtrlLoop[j].filLen;
-						   tmp2_u16 = abs(sipmCtrlLoop[j].tSetAct - (sipmCtrlLoop[j].sumFil/sipmCtrlLoop[j].filLen));
-						   if (abs(sipmCtrlLoop[j].tSetAct - (sipmCtrlLoop[j].sumFil/sipmCtrlLoop[j].filLen)) > sipmCtrlLoop[j].tDelta)
-						   {
-
-							   if ((sipmCtrlLoop[j].sumFil/sipmCtrlLoop[j].filLen) > sipmCtrlLoop[j].tSetAct)
-							   {
-								   // v1
-								   // sipmCtrlLoop[j].vSetAct += sipmCtrlLoop[j].vDelta;
-
-								   // v2
-								   sipmCtrlLoop[j].vSetAct -= (((abs(tmp1_u16-sipmCtrlLoop[j].tSetAct))/sipmCtrlLoop[j].tDelta)*sipmCtrlLoop[j].vDelta);
-							   }
-							   else
-							   {
-								   // v1
-								   // sipmCtrlLoop[j].vSetAct -= sipmCtrlLoop[j].vDelta;
-
-								   // v2
-								   sipmCtrlLoop[j].vSetAct += (((abs(tmp1_u16-sipmCtrlLoop[j].tSetAct))/sipmCtrlLoop[j].tDelta)*sipmCtrlLoop[j].vDelta);
-							   }
-
-							   sipmCtrlLoop[j].tSetAct = sipmCtrlLoop[j].sumFil/sipmCtrlLoop[j].filLen;
-
-							   // setVoltage
-							   // clean it !!!
-							   if (j == 0)
-							   {
-								   if (HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, sipmCtrlLoop[j].vSetAct) != HAL_OK)
-								   {
-									   Error_Handler();
-								   }
-								   if (HAL_DAC_Start(&hdac, DAC_CHANNEL_1) != HAL_OK)
-								   {
-									   Error_Handler();
-								   }
-							   }
-							   else
-							   {
-								   if (HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, sipmCtrlLoop[j].vSetAct) != HAL_OK)
-								   {
-									   Error_Handler();
-								   }
-								   if (HAL_DAC_Start(&hdac, DAC_CHANNEL_2) != HAL_OK)
-								   {
-									   Error_Handler();
-								   }
-							   }
-						   }
-					   }                             // end of CtrlTempLoopOnPrev
-					   CtrlTempLoopOnPrev[j] = 1;
-				   }                                 // end of ((ctrlReg02 >> j) & 0x1)
-			   }                                     // end of for loop
-			   // CtrlTempLoopInt = 0;
-		   }                                         // end of ctrl loop
-
-    	   CtrlTempLoopInt = 0;
-       }                                             // end of 'if (CtrlTempLoopInt) {'
-
-       HAL_IWDG_Refresh(&hiwdg);
-    }                                            // end of while
 }                                                // end of main
-
-//void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
-//{
-//    HAL_CAN_Receive_IT(hcan, CAN_FIFO0);
-//}
 
 /******************************************************************************/
 /** Local Conf & Init Functions                                              **/
@@ -971,40 +324,6 @@ static void MX_CAN_Init(void)
     {
         _Error_Handler(__FILE__, __LINE__);
     }
-
-    //slcanClearAllFilters();
-
-    // Configure filters with mask
-    /*
-    sFilterConfig.BankNumber = 0;
-    sFilterConfig.FilterNumber = 0;
-    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-    sFilterConfig.FilterIdHigh = (0x01 << 5);
-    sFilterConfig.FilterIdLow = 0;
-    sFilterConfig.FilterMaskIdHigh = (0xFFFF << 5);
-    sFilterConfig.FilterMaskIdLow = 0;
-    sFilterConfig.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-    sFilterConfig.FilterActivation = ENABLE;
-    */
-
-//    // Configure filters with id list
-//    sFilterConfig.BankNumber = 0;
-//    sFilterConfig.FilterNumber = 0;
-//    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-//    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-////    sFilterConfig.FilterIdHigh = (CAN_ID << 5);
-//    sFilterConfig.FilterIdHigh = (0 << 5);
-//    sFilterConfig.FilterIdLow = 0;
-//    sFilterConfig.FilterMaskIdHigh = 0;
-//    sFilterConfig.FilterMaskIdLow = 0;
-//    sFilterConfig.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-//    sFilterConfig.FilterActivation = ENABLE;
-//
-//    if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK)
-//    {
-//        Error_Handler();
-//    }
 
     if (configure_can_filter (&hcan, CAN_ID) != HAL_OK)
     {
@@ -1255,6 +574,55 @@ static void MX_TIM1_Init(void)
 
 }
 
+
+/**
+  * @brief DAC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DAC_Init(void)
+{
+
+  /* USER CODE BEGIN DAC_Init 0 */
+
+  /* USER CODE END DAC_Init 0 */
+
+  DAC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN DAC_Init 1 */
+
+  /* USER CODE END DAC_Init 1 */
+
+  /** DAC Initialization
+  */
+  hdac.Instance = DAC;
+  if (HAL_DAC_Init(&hdac) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** DAC channel OUT1 config
+  */
+  sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
+  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** DAC channel OUT2 config
+  */
+  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DAC_Init 2 */
+
+  /* USER CODE END DAC_Init 2 */
+
+}
+
+
 /**
   * @brief ADC Initialization Function
   * @param None
@@ -1445,413 +813,13 @@ static void MX_TIM2_Init(void)
 /** Other Functions                                                          **/
 /******************************************************************************/
 
-
-static void getADC()
+static void __attribute__ ((cold, optimize("-Os")))
+getUID (void)
 {
-
-	// HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
-
-    for (int i = 0; i < ADC_CH_NR; i++)
-    {
-        if (HAL_ADC_Start(&hadc) != HAL_OK)
-        {
-            Error_Handler();
-        }
-
-        if (HAL_ADC_PollForConversion(&hadc, 10) != HAL_OK)
-        {
-            Error_Handler();
-        }
-
-        adc_raw[i] = HAL_ADC_GetValue(&hadc);
-    }
-
-	if ((ctrlReg02 >> 24) & 0x1) {
-        adc_raw[7] = simTemp[0];
-        adc_raw[6] = simTemp[1];
-    }
-
-	// HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
-
+  UID[0] = HAL_GetUIDw0 ();
+  UID[1] = HAL_GetUIDw1 ();
+  UID[2] = HAL_GetUIDw2 ();
 }
-
-static void CANRQST_GetVer(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x01;
-    hcan.pTxMsg->Data[2] = (((uint16_t) verH) & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[3] = ((uint16_t) verH) & 0x00FF;
-    hcan.pTxMsg->Data[4] = (((uint16_t) verL) & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[5] = ((uint16_t) verL) & 0x00FF;
-    hcan.pTxMsg->Data[6] = (((uint16_t) verD) & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[7] = ((uint16_t) verD) & 0x00FF;
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_GetUID0(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x02;
-    uint32_t uid0 = UID[0];
-    hcan.pTxMsg->Data[2] = (uid0 & 0xFF000000) >> 24;
-    hcan.pTxMsg->Data[3] = (uid0 & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[4] = (uid0 & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[5] = (uid0 & 0x000000FF);
-
-    transmitStdMy();
-}
-
-static void CANRQST_GetUID1(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x03;
-    uint32_t uid0 = UID[1];
-    hcan.pTxMsg->Data[2] = (uid0 & 0xFF000000) >> 24;
-    hcan.pTxMsg->Data[3] = (uid0 & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[4] = (uid0 & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[5] = (uid0 & 0x000000FF);
-
-    transmitStdMy();
-}
-
-static void CANRQST_GetUID2(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x04;
-    uint32_t uid0 = UID[2];
-    hcan.pTxMsg->Data[2] = (uid0 & 0xFF000000) >> 24;
-    hcan.pTxMsg->Data[3] = (uid0 & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[4] = (uid0 & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[5] = (uid0 & 0x000000FF);
-
-    transmitStdMy();
-}
-
-static void CANRQST_GetADC1(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x10;
-    hcan.pTxMsg->Data[2] = (adc_raw[0] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[3] = adc_raw[0] & 0x00FF;
-    hcan.pTxMsg->Data[4] = (adc_raw[1] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[5] = adc_raw[1] & 0x00FF;
-    hcan.pTxMsg->Data[6] = (adc_raw[2] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[7] = adc_raw[2] & 0x00FF;
-
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_GetADC2(void)
-{
-    //CANTXcomm
-
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x11;
-    hcan.pTxMsg->Data[2] = (adc_raw[3] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[3] = adc_raw[3] & 0x00FF;
-    hcan.pTxMsg->Data[4] = (adc_raw[4] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[5] = adc_raw[4] & 0x00FF;
-    hcan.pTxMsg->Data[6] = (adc_raw[5] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[7] = adc_raw[5] & 0x00FF;
-
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_GetTemp(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x13;
-    hcan.pTxMsg->Data[2] = (adc_raw[7] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[3] = adc_raw[7] & 0x00FF;
-    hcan.pTxMsg->Data[4] = (adc_raw[6] & 0xFF00) >> 8;
-    hcan.pTxMsg->Data[5] = adc_raw[6] & 0x00FF;
-
-    transmitStdMy();
-}
-
-static void CANRQST_GetADC1avg(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x14;
-    hcan.pTxMsg->Data[2] = (measFilter_tmp[0] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[3] = (measFilter_tmp[0] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[4] = measFilter_tmp[0] & 0x000000FF;
-    hcan.pTxMsg->Data[5] = (measFilter_tmp[1] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[6] = (measFilter_tmp[1] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[7] = measFilter_tmp[1] & 0x000000FF;
-
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_GetADC2avg(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x15;
-    hcan.pTxMsg->Data[2] = (measFilter_tmp[2] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[3] = (measFilter_tmp[2] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[4] = measFilter_tmp[2] & 0x000000FF;
-    hcan.pTxMsg->Data[5] = (measFilter_tmp[3] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[6] = (measFilter_tmp[3] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[7] = measFilter_tmp[3] & 0x000000FF;
-
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_GetADC3avg(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x16;
-    hcan.pTxMsg->Data[2] = (measFilter_tmp[4] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[3] = (measFilter_tmp[4] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[4] = measFilter_tmp[4] & 0x000000FF;
-    hcan.pTxMsg->Data[5] = (measFilter_tmp[5] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[6] = (measFilter_tmp[5] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[7] = measFilter_tmp[5] & 0x000000FF;
-
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_GetTempAvg(void)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x17;
-    hcan.pTxMsg->Data[2] = (measFilter_tmp[7] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[3] = (measFilter_tmp[7] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[4] = measFilter_tmp[7] & 0x000000FF;
-    hcan.pTxMsg->Data[5] = (measFilter_tmp[6] & 0x00FF0000) >> 16;
-    hcan.pTxMsg->Data[6] = (measFilter_tmp[6] & 0x0000FF00) >> 8;
-    hcan.pTxMsg->Data[7] = measFilter_tmp[6] & 0x000000FF;
-
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_SetDAC(uint16_t ch1, uint16_t ch2)
-{
-
-    if (HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, ch1) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    if (HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, ch2) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    if (HAL_DAC_Start(&hdac, DAC_CHANNEL_1) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    if (HAL_DAC_Start(&hdac, DAC_CHANNEL_2) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 8;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x12;
-    hcan.pTxMsg->Data[2] = 0x01;
-    hcan.pTxMsg->Data[3] = ch1;
-    hcan.pTxMsg->Data[4] = 0x02;
-    hcan.pTxMsg->Data[5] = ch2;
-    hcan.pTxMsg->Data[6] = 0x00;
-    hcan.pTxMsg->Data[7] = 0x00;
-
-    transmitStdMy();
-}
-
-static void CANRQST_SetCtrlReg01(uint32_t ctrlReg)
-{
-    for (int i = 0; i < CTRL_REG_01_LEN; i++)
-    {
-        if ((ctrlReg >> i) & 0x1)
-        {
-            HAL_GPIO_WritePin(ctrlReg01_def[i].bank, ctrlReg01_def[i].gpioNr, GPIO_PIN_SET);
-        }
-    }
-
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x40;
-    hcan.pTxMsg->Data[2] = (ctrlReg >> 24);
-    hcan.pTxMsg->Data[3] = (ctrlReg >> 16);
-    hcan.pTxMsg->Data[4] = (ctrlReg >>  8);
-    hcan.pTxMsg->Data[5] = (ctrlReg >>  0);
-
-    transmitStdMy();
-
-}
-
-static void CANRQST_ClrCtrlReg01(uint32_t ctrlReg)
-{
-    for (int i = 0; i < CTRL_REG_01_LEN; i++)
-    {
-        if ((ctrlReg >> i) & 0x1)
-        {
-            HAL_GPIO_WritePin(ctrlReg01_def[i].bank, ctrlReg01_def[i].gpioNr, GPIO_PIN_RESET);
-        }
-    }
-
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x41;
-    hcan.pTxMsg->Data[2] = (ctrlReg >> 24);
-    hcan.pTxMsg->Data[3] = (ctrlReg >> 16);
-    hcan.pTxMsg->Data[4] = (ctrlReg >>  8);
-    hcan.pTxMsg->Data[5] = (ctrlReg >>  0);
-
-    transmitStdMy();
-}
-
-static void CANRQST_GetCtrlReg01(void)
-{
-    // funkcja zadziala tylko w okreslonym przypadku:
-    // https://community.st.com/s/question/0D50X00009XkfFTSAZ/the-hal-function-to-read-the-current-output-status-of-a-gpio
-    //w przypadku wyjsc ustawionych jako OD nie zadziala !!!
-    uint32_t tmp = 0;
-    GPIO_PinState piState;
-
-    for (int i = 0; i < CTRL_REG_01_LEN; i++)
-    {
-        piState = HAL_GPIO_ReadPin(ctrlReg01_def[i].bank, ctrlReg01_def[i].gpioNr);
-        if (piState == GPIO_PIN_SET)
-        {
-            tmp |= (1 << i);
-        }
-    }
-
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x42;
-    hcan.pTxMsg->Data[2] = (tmp >> 24);
-    hcan.pTxMsg->Data[3] = (tmp >> 16);
-    hcan.pTxMsg->Data[4] = (tmp >>  8);
-    hcan.pTxMsg->Data[5] = (tmp >>  0);
-
-    transmitStdMy();
-
-}
-/*
-static void CANRQST_GetCtrlReg02(uint32_t *data)
-{
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 6;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0x42;
-    hcan.pTxMsg->Data[2] = (*data >> 24);
-    hcan.pTxMsg->Data[3] = (*data >> 16);
-    hcan.pTxMsg->Data[4] = (*data >>  8);
-    hcan.pTxMsg->Data[5] = (*data >>  0);
-
-    transmitStdMy();
-}
-*/
-
-static void CANRQST_SetDigRes(uint8_t *data)
-{
-    HAL_SPI_Transmit(&hspi1, data, 1, 5000);
-
-    hcan.pTxMsg->StdId = CAN_ID;
-    hcan.pTxMsg->IDE = CAN_ID_STD;
-    hcan.pTxMsg->RTR = CAN_RTR_DATA;
-    hcan.pTxMsg->DLC = 3;
-    hcan.pTxMsg->Data[0] = 0x00;
-    hcan.pTxMsg->Data[1] = 0xA0;
-    hcan.pTxMsg->Data[2] = 0x01;
-
-    transmitStdMy();
-
-}
-
-static void getUID(void)
-{
-    UID[0] = HAL_GetUIDw0();
-    UID[1] = HAL_GetUIDw1();
-    UID[2] = HAL_GetUIDw2();
-}
-
-//void
-//HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
-//{
-//  blink1();
-//  canRxFlags.flags.fifo1 = 1;
-////  blink_main();
-//  software_watchdog_1 = HAL_GetTick();
-//  HAL_CAN_Receive_IT(hcan, CAN_FIFO0);
-//}
 
 /**
   * @brief  This function is executed in case of error occurrence.

@@ -67,7 +67,6 @@ typedef enum
 typedef struct
 {
   uint32_t timestamp;
-//  uint32_t StdId;
   uint32_t DLC;
   uint8_t Data[8];
 } s_can_msg_recieved;

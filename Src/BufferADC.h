@@ -50,7 +50,7 @@ size_t get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N,
 
 size_t get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here);
 
-void add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement);
+void add_to_buffer (s_BufferADC *cb, const s_ADC_Measurement *measurement);
 
 
 #endif /* BUFFERADC_H_ */

@@ -17,6 +17,12 @@
 #define AFE_DAC_MAX 0xFFF
 #define AFE_DAC_START 0xFFF
 
+#define AFE_REGULATOR_DEFAULT_a 0.05
+#define AFE_REGULATOR_DEFAULT_T0 25.0
+#define AFE_REGULATOR_DEFAULT_U0 55.0
+#define AFE_REGULATOR_DEFAULT_U_offset 0.0
+#define AFE_REGULATOR_DEFAULT_dT 1.0
+
 #define TIMEOUT_SPI1_MS 5000
 
 #define USE_SHIFTING_IN_SetPinFromArray 0
@@ -30,8 +36,7 @@
 uint8_t get_byte_of_message_number(uint8_t msg_index, uint8_t msg_index_max);
 
 void machine_main_init_0 (void);
-void
-machine_main (void);
+void machine_main (void);
 
 
 #endif /* MACHINE_MAIN_H_ */

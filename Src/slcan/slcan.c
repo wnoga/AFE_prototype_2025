@@ -15,55 +15,22 @@ static uint8_t state = STATE_CONFIG;
 
 extern CAN_HandleTypeDef hcan;
 
-void slcanClose()
-{
-	HAL_NVIC_DisableIRQ(CEC_CAN_IRQn);
-	state = STATE_CONFIG;
-}
-
-uint8_t transmitStdMy() {
-    HAL_StatusTypeDef tr;
-
-    HAL_NVIC_DisableIRQ(CEC_CAN_IRQn);
-    tr = HAL_CAN_Transmit(&hcan, 0);
-    HAL_NVIC_EnableIRQ(CEC_CAN_IRQn);
-    return tr;
-}
-
-/**
- * @brief  get slcan state
- * @param  none
- * @retval slcan state
- */
-/*
-uint8_t slcan_getState()
-{
-	return state;
-}
-*/
-
-void StartCan()
+void
+StartCan (void)
 {
 
-	HAL_NVIC_DisableIRQ(CEC_CAN_IRQn);
-    state = STATE_CONFIG;
+  HAL_NVIC_DisableIRQ (CEC_CAN_IRQn);
+  state = STATE_CONFIG;
 
+  if (state == STATE_CONFIG) slcanSetCANBaudRate (CAN_BR_100K);
 
- //   HAL_Delay(500);
+  hcan.Init.Mode = CAN_MODE_NORMAL;
 
-	if (state == STATE_CONFIG)
-	slcanSetCANBaudRate(CAN_BR_100K);
-
-//	HAL_Delay(500);
-
-	hcan.Init.Mode = CAN_MODE_NORMAL;
-
-	if(CANInit() == HAL_OK)
-	{
-	HAL_NVIC_EnableIRQ(CEC_CAN_IRQn);
-	state = STATE_OPEN;
-	}
-
+  if (CANInit () == HAL_OK)
+    {
+      HAL_NVIC_EnableIRQ (CEC_CAN_IRQn);
+      state = STATE_OPEN;
+    }
 }
 
 

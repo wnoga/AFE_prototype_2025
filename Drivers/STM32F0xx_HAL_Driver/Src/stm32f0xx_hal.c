@@ -292,7 +292,7 @@ __weak void HAL_IncTick(void)
   *       implementations in user file.
   * @retval tick value
   */
-__weak uint32_t HAL_GetTick(void)
+inline uint32_t __attribute__ ((always_inline, optimize("-O3"))) HAL_GetTick(void)
 {
   return uwTick;
 }

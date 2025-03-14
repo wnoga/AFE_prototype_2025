@@ -11,18 +11,17 @@
 
 /* Driver */
 
-float
-get_voltage_for_SiPM (float T, float dU, float dT, float T_0, float U_0, float U_cor)
+inline float __attribute__ ((always_inline, optimize("-O3")))
+get_voltage_for_SiPM (float T, float a, float T_0, float U_0, float U_cor)
 {
-  return (dU / dT) * (T - T_0) + U_0 + U_cor;
+  return a * (T - T_0) + U_0 + U_cor;
 }
 
-float
+float __attribute__ ((optimize("-O3")))
 get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings)
 {
-  return get_voltage_for_SiPM (T, regulatorSettings->dU, regulatorSettings->dT,
-			       regulatorSettings->T_0, regulatorSettings->U_0,
-			       regulatorSettings->U_cor);
+  return get_voltage_for_SiPM (T, regulatorSettings->a, regulatorSettings->T_0,
+			       regulatorSettings->U_0, regulatorSettings->U_offset);
 }
 
 /* COMPUTE FUNCTIONS */
@@ -34,7 +33,7 @@ compare_measurements (const void *a, const void *b)
   return (diff > 0) - (diff < 0); // Returns -1, 0, or 1
 }
 
-static float
+static float __attribute__((deprecated))
 calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float alpha,
 		   uint32_t timestamp_ms)
 {
@@ -126,7 +125,7 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float al
   return result;
 }
 
-static size_t
+static inline size_t __attribute__ ((optimize("-O3")))
 get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms,
 			 e_average method, float *average_result, float alpha, float multiplicator)
 {
@@ -243,7 +242,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   return count;
 }
 
-size_t
+inline size_t __attribute__ ((always_inline, optimize("-O3")))
 get_average_atSettings (s_channelSettings *a, float *here)
 {
   return get_average_from_buffer (a->buffer_ADC, a->max_N, HAL_GetTick (), a->max_dt_ms,

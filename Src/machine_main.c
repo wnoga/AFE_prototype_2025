@@ -153,6 +153,7 @@ machine_SPI_Transmit (SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size, ui
 #warning "DEBUG_HARDWARE_CONTROL_DISABLED"
   return HAL_OK;
 #endif
+  /* SPI should be set to send 10-bits */
   return HAL_SPI_Transmit (hspi, pData, Size, Timeout);
 }
 
@@ -381,10 +382,10 @@ machine_DAC_switch (uint8_t channel, uint8_t enable)
 static uint16_t
 machine_DAC_convert_mv_to_dac_value (float mV)
 {
+#warning "FIXME Create conversion from float to DAC uint16_t value"
   return mV;
 }
-
-void
+void __attribute__ ((cold, optimize("-Os")))
 machine_main_init_0 (void)
 {
   machine_main_status = e_machine_main_init;
@@ -397,6 +398,8 @@ machine_main_init_0 (void)
       channelSettings[i0].buffer_size = ADC_MEASUREMENT_RAW_SIZE_MAX;
       channelSettings[i0].max_dt_ms = 3600 * 1000; // 1 hour
       channelSettings[i0].multiplicator = 1.0;
+      channelSettings[i0].a = 1.0;
+      channelSettings[i0].b = 0.0;
       channelSettings[i0].max_N = ADC_MEASUREMENT_RAW_SIZE_MAX;
 
       channelSettings[i0].period_ms = 0;
@@ -410,11 +413,12 @@ machine_main_init_0 (void)
 
   for (uint8_t i0 = 0; i0 < 2; ++i0)
     {
-      regulatorSettings[i0].T_0 = 25.0;
-      regulatorSettings[i0].U_0 = 0.0;
-      regulatorSettings[i0].U_cor = 0.0;
-      regulatorSettings[i0].dT = 1.0;
-      regulatorSettings[i0].dU = 1.0;
+      regulatorSettings[i0].a = AFE_REGULATOR_DEFAULT_a;
+      regulatorSettings[i0].T_0 = AFE_REGULATOR_DEFAULT_T0;
+      regulatorSettings[i0].U_0 = AFE_REGULATOR_DEFAULT_U0;
+      regulatorSettings[i0].U_offset = AFE_REGULATOR_DEFAULT_U_offset;
+      regulatorSettings[i0].dT = AFE_REGULATOR_DEFAULT_dT;
+//      regulatorSettings[i0].dU = AFE_REGULATOR_DEFAULT_dT;
       regulatorSettings[i0].T_old = regulatorSettings[i0].T_0;
       regulatorSettings[i0].enabled = 0;
       regulatorSettings[i0].ramp_bit_step = 1;
@@ -425,19 +429,20 @@ machine_main_init_0 (void)
     }
 
   /* Append ADC channel to regulator settings */
-  regulatorSettings[0].temperature_channelSettings_ptr = &channelSettings[7];
-  regulatorSettings[1].temperature_channelSettings_ptr = &channelSettings[6];
+  regulatorSettings[0].temperature_channelSettings_ptr = &channelSettings[e_ADC_CHANNEL_TEMP_LOCAL];
+  regulatorSettings[1].temperature_channelSettings_ptr = &channelSettings[e_ADC_CHANNEL_TEMP_EXT];
 }
 
-uint8_t
+inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
 get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
 {
-  if ((msg_index > 15) | (total_msg_count > 15)) return 0;
-  return (0xF0 & (total_msg_count << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
+  return
+      ((msg_index > 15) | (total_msg_count > 15)) ?
+	  0 : (0xF0 & (total_msg_count << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
 }
 
 static uint32_t value0;
-void
+void __attribute__ ((optimize("-O3")))
 can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 {
   CAN_Message_t tmp;
@@ -494,11 +499,12 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	uint8_t channel = msg.Data[2];
 	s_ADC_Measurement adc_val;
 	get_n_latest_from_buffer(channelSettings[channel].buffer_ADC, 1, &adc_val);
-	float adc_value_real = adc_val.adc_value * channelSettings[channel].multiplicator;
+	float adc_value_real = channelSettings[channel].a * adc_val.adc_value + channelSettings[channel].b;
 	tmp.data[2] = channel;
 	tmp.dlc = 2 + 1 + sizeof(float);
 	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	break;
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]  */
     case AFECommand_getSensorDataSi_average:
@@ -510,6 +516,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1 + sizeof(float);
 	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
 	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	break;
       }
       /* Send SI data [Data[0]] from all channels as float average value[Data[3:7]]  */
     case AFECommand_getSensorDataSi_all_average:
@@ -525,6 +532,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
 	    CAN_EnqueueMessage (&canTxBuffer, &tmp);
 	  }
+	break;
       }
     case AFECommand_setSensorDataSi_all_periodic_average:
       {
@@ -848,6 +856,26 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 //	averagingSettings[msg.Data[2]].subdevice = (e_subdevice)msg.Data[3];
 	break;
       }
+    case AFECommand_setChannel_a:
+      {
+	uint8_t channel = msg.Data[2];
+	memcpy (&channelSettings[channel].a, &msg.Data[3], sizeof(float));
+	tmp.dlc = 7;
+	tmp.data[1] = msg.Data[1];
+	tmp.data[2] = msg.Data[2];
+	memcpy(&tmp.data[3],&channelSettings[channel].a,sizeof(float));
+	break;
+      }
+    case AFECommand_setChannel_b:
+      {
+	uint8_t channel = msg.Data[2];
+	memcpy (&channelSettings[channel].b, &msg.Data[3], sizeof(float));
+	tmp.dlc = 7;
+	tmp.data[1] = msg.Data[1];
+	tmp.data[2] = msg.Data[2];
+	memcpy(&tmp.data[3],&channelSettings[channel].b,sizeof(float));
+	break;
+      }
     default:
       {
 	tmp.dlc = 8;
@@ -865,7 +893,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
     }
 }
 
-void
+void __attribute__ ((optimize("-O3")))
 machine_calculate_averageValues (float *here)
 {
   uint32_t timestamp_now = HAL_GetTick ();
@@ -876,6 +904,12 @@ machine_calculate_averageValues (float *here)
 	  here[i0] = get_average_atSettings(&channelSettings[i0], &here[i0]);
 	}
     }
+}
+
+inline float __attribute__ ((always_inline, optimize("-O3")))
+faxplusb (float value, s_channelSettings *ch)
+{
+  return ch->a * value + ch->b;
 }
 
 /***
@@ -902,6 +936,10 @@ machine_control (void)
 	  /* Skip if cannot calculate average */
 	  continue;
 	}
+
+      /* Apply a*x+b */
+      average_Temperature = faxplusb (average_Temperature,
+				      regulatorSettings_ptr->temperature_channelSettings_ptr);
 
       if (fabsf (average_Temperature - regulatorSettings_ptr->T_old) >= regulatorSettings_ptr->dT)
 	{
@@ -988,7 +1026,7 @@ machine_control (void)
     }
 }
 
-static void
+static void __attribute__ ((optimize("-O3")))
 machine_periodic_report (void)
 {
   for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
@@ -1053,17 +1091,30 @@ machine_main (void)
     }
 }
 
-static s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback;
+static volatile s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback;
 /* DMA Transfer Complete Callback */
 void  __attribute__ ((optimize("-O3")))
 HAL_ADC_ConvCpltCallback (ADC_HandleTypeDef *hadc)
 {
-  /* Append ADC values to buffers */
-  _ADC_Measurement_HAL_ADC_ConvCpltCallback.timestamp_ms = HAL_GetTick ();
-  for (uint8_t i = 0; i < ADC_NUMBER_OF_CHANNELS; ++i)
+//    __DSB();  // Data Synchronization Barrier (ensures previous memory accesses complete)
+
+    /* Store timestamp */
+    _ADC_Measurement_HAL_ADC_ConvCpltCallback.timestamp_ms = HAL_GetTick();
+
+    for (uint8_t i = 0; i < ADC_NUMBER_OF_CHANNELS; ++i)
     {
-      _ADC_Measurement_HAL_ADC_ConvCpltCallback.adc_value = adc_dma_buffer[i];
-      add_to_buffer (&bufferADC[i], &_ADC_Measurement_HAL_ADC_ConvCpltCallback);
+        /* Ensure the latest ADC value is read from memory (not a cached value) */
+//        __DMB();  // Data Memory Barrier (ensures correct ordering of memory operations)
+
+        _ADC_Measurement_HAL_ADC_ConvCpltCallback.adc_value = adc_dma_buffer[i];
+
+        /* Ensure value is stored before proceeding */
+//        __DSB();
+
+        add_to_buffer(&bufferADC[i], &_ADC_Measurement_HAL_ADC_ConvCpltCallback);
     }
+
+    /* Ensure ISR execution order is correct before exiting */
+//    __ISB();  // Instruction Synchronization Barrier (ensures all instructions complete before next)
 }
 

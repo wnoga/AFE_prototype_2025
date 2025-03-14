@@ -50,6 +50,8 @@ typedef enum
   AFECommand_setAveraging_max_dt_ms = 0xD4,
   AFECommand_setChannel_multiplicator = 0xD5,
   AFECommand_setAveragingSubdevice = 0xD6,
+  AFECommand_setChannel_a = 0xD7,
+  AFECommand_setChannel_b = 0xD8,
 
   AFECommand_debug_machine_control = 0xF1
 } AFECommand;
@@ -81,6 +83,18 @@ typedef enum
 
 typedef enum
 {
+  e_ADC_CHANNEL_DC_LEVEL_MEAS0=0,
+  e_ADC_CHANNEL_DC_LEVEL_MEAS1,
+  e_ADC_CHANNEL_U_SIPM_MEAS0,
+  e_ADC_CHANNEL_U_SIPM_MEAS1,
+  e_ADC_CHANNEL_I_SIPM_MEAS0,
+  e_ADC_CHANNEL_I_SIPM_MEAS1,
+  e_ADC_CHANNEL_TEMP_EXT,
+  e_ADC_CHANNEL_TEMP_LOCAL,
+} e_ADC_CHANNEL;
+
+typedef enum
+{
   e_average_NONE,
   e_average_STANDARD,
   e_average_EXPONENTIAL,
@@ -106,6 +120,8 @@ typedef struct
 
   uint32_t max_dt_ms; // maximum time difference in averaging
   float multiplicator; // multiplicator for raw ADC value (convert to real value)
+  float a; // for f=a*x+b
+  float b; // for f=a*x+b
 //  uint32_t bin_width_ms; // bin width for averaging
   float alpha; // weight modificator for averaging
   uint32_t max_N; // maximum number of data used for averaging
@@ -120,11 +136,12 @@ typedef struct
   e_subdevice subdevice;
   s_channelSettings *temperature_channelSettings_ptr;
   /* Temperature loop parameters */
-  float dU;
-  float dT;
-  float T_0;
-  float U_0;
-  float U_cor;
+  float dT; // minimum temperature change to drive ADC
+  /* a*(T-T_0)+U_0+U_offset */
+  float a; // [V/deg T]
+  float T_0; // [deg C]
+  float U_0; // [V]
+  float U_offset; // [V]
   /* Old temperature value */
   float T_old;
   int8_t enabled;

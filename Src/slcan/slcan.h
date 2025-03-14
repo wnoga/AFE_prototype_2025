@@ -36,19 +36,6 @@
 #define STATE_LISTEN 1
 #define STATE_OPEN 2
 
-void slcanOutputFlush(void);
-void slcanClose();
-uint8_t slcanReciveCanFrame(CanRxMsgTypeDef *pRxMsg);
-int slCanProccesInput(uint8_t ch);
-uint8_t slCanCheckCommand(uint8_t *line);
-uint8_t slcan_getState(void);
-
-uint8_t transmitStd(uint8_t* line);
-uint8_t transmitStdMy();
-
 void StartCan(void);
-
-extern uint8_t command[LINE_MAXLEN];
-extern uint8_t lastInputBuffer;
 
 #endif /* SLCAN_PORT_H_ */
