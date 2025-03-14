@@ -86,42 +86,13 @@ const size_t verArrLen = sizeof(verArr) / sizeof(verArr[0]);
 ADC_HandleTypeDef hadc;
 DAC_HandleTypeDef hdac;
 
-
 CAN_HandleTypeDef hcan;
 IWDG_HandleTypeDef hiwdg;
 UART_HandleTypeDef huart2;
-//DMA_HandleTypeDef hdma_adc;
 SPI_HandleTypeDef hspi1;
-TIM_HandleTypeDef htim2;
-
 TIM_HandleTypeDef htim1;
-
 DMA_HandleTypeDef hdma_adc;
 
-
-/** CAN **/
-CanTxMsgTypeDef CanTxBuffer;
-CanRxMsgTypeDef CanRxBuffer;
-
-typedef struct tcanRxFlags {
-    union {
-        struct {
-            uint8_t fifo1 :1;
-            uint8_t fifo2 :1;
-        };
-        uint8_t byte;
-    } flags;
-    uint8_t activefifo;
-} tcanRx;
-volatile tcanRx canRxFlags;
-
-/** ADC **/
-#define ADC_CH_NR 8
-uint16_t adc_raw[ADC_CH_NR]; // -> opisac co ktory kanal oznacza !!!
-uint32_t measFilter[ADC_CH_NR];
-uint32_t measFilter_tmp[ADC_CH_NR];
-uint16_t measFilterOut[ADC_CH_NR];
-uint16_t simTemp[2];
 
 /******************************************************************************/
 /** Local Functions                                                          **/
@@ -137,7 +108,6 @@ static void MX_ADC_Init(void);
 static void MX_DAC_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
-static void MX_TIM2_Init(void);
 static void MX_DMA_Init(void);
 
 static void
@@ -183,16 +153,9 @@ uint32_t testg;
 
 void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim)
 {
-//	if(htim==&htim6) // check source
-//	{
-//		transmissionReceived=1;
-//	}
   if (htim == &htim1)
     {
-//      blink1 ();
-    }
-  else if (htim == &htim2)
-    {
+
     }
 }
 
@@ -220,18 +183,12 @@ int main(void)
     MX_DAC_Init();
 
     MX_SPI1_Init();
-    MX_TIM2_Init();
 
     MX_ADC_Init();
     MX_TIM1_Init();
 
-    __HAL_RCC_DBGMCU_CLK_ENABLE();
-    __HAL_DBGMCU_FREEZE_IWDG();
-
-    hcan.pTxMsg = &CanTxBuffer;
-    hcan.pRxMsg = &CanRxBuffer;
-
-    canRxFlags.flags.byte = 0;
+//    __HAL_RCC_DBGMCU_CLK_ENABLE();
+//    __HAL_DBGMCU_FREEZE_IWDG();
 
     machine_main_init_0();
     while(1)
@@ -304,28 +261,25 @@ void SystemClock_Config(void)
   */
 static void MX_CAN_Init(void)
 {
+  hcan.Instance = CAN;
+  hcan.Init.Prescaler = 3;
+  hcan.Init.Mode = CAN_MODE_NORMAL;
+  hcan.Init.SJW = CAN_SJW_2TQ;
+  hcan.Init.BS1 = CAN_BS1_11TQ;
+  hcan.Init.BS2 = CAN_BS2_4TQ;
+  hcan.Init.TTCM = DISABLE;
+  hcan.Init.ABOM = ENABLE;
+  hcan.Init.AWUM = ENABLE;
+  hcan.Init.NART = DISABLE;
+  hcan.Init.RFLM = DISABLE;
+  hcan.Init.TXFP = DISABLE;
 
-    CAN_FilterConfTypeDef  sFilterConfig;
-
-    hcan.Instance = CAN;
-    hcan.Init.Prescaler = 3;
-    hcan.Init.Mode = CAN_MODE_NORMAL;
-    hcan.Init.SJW = CAN_SJW_2TQ;
-    hcan.Init.BS1 = CAN_BS1_11TQ;
-    hcan.Init.BS2 = CAN_BS2_4TQ;
-    hcan.Init.TTCM = DISABLE;
-    hcan.Init.ABOM = ENABLE;
-    hcan.Init.AWUM = ENABLE;
-    hcan.Init.NART = DISABLE;
-    hcan.Init.RFLM = DISABLE;
-    hcan.Init.TXFP = DISABLE;
-
-    if (HAL_CAN_Init(&hcan) != HAL_OK)
+  if (HAL_CAN_Init (&hcan) != HAL_OK)
     {
-        _Error_Handler(__FILE__, __LINE__);
+      Error_Handler();
     }
 
-    if (configure_can_filter (&hcan, CAN_ID) != HAL_OK)
+  if (configure_can_filter (&hcan, CAN_ID) != HAL_OK)
     {
       Error_Handler();
     }
@@ -405,100 +359,6 @@ static void MX_GPIO_Init(void)
 
     // Configure SPI1
 }
-
-/**
-  * @brief  ADC init function
-  * @param  None
-  * @return None
-  */
-/*
-static void MX_ADC_Init(void)
-{
-    ADC_ChannelConfTypeDef sConfig = {0};
-
-    hadc.Instance = ADC1;
-    hadc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
-    hadc.Init.Resolution = ADC_RESOLUTION_12B;
-    hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-    hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
-    hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-    hadc.Init.LowPowerAutoWait = DISABLE;
-    hadc.Init.LowPowerAutoPowerOff = DISABLE;
-    hadc.Init.ContinuousConvMode = DISABLE;
-    hadc.Init.DiscontinuousConvMode = ENABLE;
-    hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-    hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-    hadc.Init.DMAContinuousRequests = DISABLE;
-    hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-
-    if (HAL_ADC_Init(&hadc) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    // config for all channels
-    sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
-
-    // Configure for the selected ADC regular channel to be converted.
-    //  * ADC_CHANNEL_0: DC_LEVEL_MEAS0
-    //  * ADC_CHANNEL_1: DC_LEVEL_MEAS1
-    //  * ADC_CHANNEL_2: U_SIPM_MEAS0
-    //  * ADC_CHANNEL_3: U_SIPM_MEAS1
-    //  * ADC_CHANNEL_6: I_SIPM_MEAS0
-    //  * ADC_CHANNEL_7: I_SIPM_MEAS1
-    //  * ADC_CHANNEL_8: TEMP_EXT
-    //  * ADC_CHANNEL_9: TEMP_LOCAL
-    //
-
-    sConfig.Channel = ADC_CHANNEL_0;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    sConfig.Channel = ADC_CHANNEL_1;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    sConfig.Channel = ADC_CHANNEL_2;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    sConfig.Channel = ADC_CHANNEL_3;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    sConfig.Channel = ADC_CHANNEL_6;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    sConfig.Channel = ADC_CHANNEL_7;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    sConfig.Channel = ADC_CHANNEL_8;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    sConfig.Channel = ADC_CHANNEL_9;
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
-}
-*/
 
 static void MX_SPI1_Init(void)
 {
@@ -751,63 +611,6 @@ static void MX_DMA_Init(void)
 
 /************* END ADC BY TIMER1 **************/
 
-static void MX_TIM2_Init(void)
-{
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 95;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 999;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /*
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-	*/
-
-
-  if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-
-}
-
-//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-//{
-//    CtrlTempLoopInt = 1;
-//	//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_10);
-//	//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_11);
-//}
 
 /******************************************************************************/
 /** Other Functions                                                          **/

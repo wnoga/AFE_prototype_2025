@@ -12,7 +12,10 @@
 #include <string.h>
 
 extern CAN_HandleTypeDef hcan;
+static CanTxMsgTypeDef CanTxBuffer;
+static CanRxMsgTypeDef CanRxBuffer;
 s_can_msg_recieved can_msg_received;
+volatile int8_t canRxFlag = 0;
 
 void
 _delay (size_t ms)
@@ -23,13 +26,14 @@ _delay (size_t ms)
     }
 }
 
-void blink1(void)
+void
+blink1 (void)
 {
 //  while(1)
 //  for(uint8_t i0=0;i0<3;++i0)
 //    {
 //      HAL_Delay(250);
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
+  HAL_GPIO_TogglePin (GPIOA, GPIO_PIN_9);
 //      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9,GPIO_PIN_SET);
 //    }
 }
@@ -55,37 +59,6 @@ GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator)
   return port;
 }
 
-/***
- * array[0] -> port
- * array[1] -> pin
- * array[2] -> status
- */
-void SetPinFromArray(uint8_t *array) {
-    GPIO_TypeDef *port;
-    uint16_t pin;
-    GPIO_PinState state;
-
-    port = GetGPIOPortByEnumerator(array[0]);
-
-    pin = (1 << array[1]); // Convert pin number to HAL GPIO pin format
-    state = (array[2] != 0) ? GPIO_PIN_SET : GPIO_PIN_RESET;
-
-    // Set the pin state
-    HAL_GPIO_WritePin(port, pin, state);
-}
-
-GPIO_PinState ReadPinFromArray(uint8_t *array) {
-    GPIO_TypeDef *port;
-    uint16_t pin;
-
-    // Calculate port address by shifting from GPIOA base
-    port = (GPIO_TypeDef *)((uint32_t)GPIOA + (array[0] * ((uint32_t)GPIOB - (uint32_t)GPIOA)));
-
-    pin = (1 << array[1]); // Convert pin number to HAL GPIO pin format
-
-    // Read and return the pin state
-    return HAL_GPIO_ReadPin(port, pin);
-}
 
 
 /**
@@ -106,15 +79,6 @@ is_this_msg_for_me (CanRxMsgTypeDef *rxCanMsg, uint8_t own_id)
       return 1;
     }
   return 0;
-}
-
-void __attribute__ ((optimize("-O3")))
-can_machine_new_message_received (CanRxMsgTypeDef *new_msg)
-{
-  is_this_msg_for_me (new_msg, CAN_ID);
-  can_msg_received.timestamp = HAL_GetTick ();
-  can_msg_received.DLC = new_msg->DLC;
-  memcpy (&can_msg_received.Data[0], &new_msg->Data[0], new_msg->DLC);
 }
 
 /**
@@ -163,23 +127,24 @@ configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id)
 }
 
 // CAN transmission state machine states
-typedef enum {
-    CAN_IDLE,
-    CAN_SENDING
-} CAN_State_t;
+typedef enum
+{
+  e_CANMachineState_IDLE,
+  e_CANMachineState_SENDING
+} e_CANMachineState;
 
 // Global variables
-CircularBuffer_t canTxBuffer;
-CAN_State_t canState = CAN_IDLE;
+CANCircularBuffer_t canTxBuffer;
+e_CANMachineState canState = e_CANMachineState_IDLE;
 uint32_t canTxLast_ms = 0;
 #define CAN_MSG_BURST_DELAY_MS 100
 
 // Function prototypes
-void CAN_InitBuffer(CircularBuffer_t *cb);
-int8_t CAN_IsBufferFull(CircularBuffer_t *cb);
-int8_t CAN_IsBufferEmpty(CircularBuffer_t *cb);
-int8_t CAN_EnqueueMessage(CircularBuffer_t *cb, CAN_Message_t *msg);
-int8_t CAN_DequeueMessage(CircularBuffer_t *cb, CAN_Message_t *msg);
+void CANCircularBuffer_Init(CANCircularBuffer_t *cb);
+int8_t CANCircularBuffer_isFull(CANCircularBuffer_t *cb);
+int8_t CANCircularBuffer_isEmpty(CANCircularBuffer_t *cb);
+int8_t CANCircularBuffer_enqueueMessage(CANCircularBuffer_t *cb, CAN_Message_t *msg);
+int8_t CANCircularBuffer_dequeueMessage(CANCircularBuffer_t *cb, CAN_Message_t *msg);
 void CAN_TransmitHandler(CAN_HandleTypeDef *hcan);
 void CAN_TransmitCallback(CAN_HandleTypeDef *hcan);
 
@@ -202,7 +167,7 @@ HAL_CAN_ErrorCallback (CAN_HandleTypeDef *hcan)
 
 // Initialize circular buffer
 void
-CAN_InitBuffer (CircularBuffer_t *cb)
+CANCircularBuffer_Init (CANCircularBuffer_t *cb)
 {
   cb->head = 0;
   cb->tail = 0;
@@ -211,36 +176,36 @@ CAN_InitBuffer (CircularBuffer_t *cb)
 
 // Check if buffer is full
 inline int8_t __attribute__ ((always_inline, optimize("-O3")))
-CAN_IsBufferFull (CircularBuffer_t *cb)
+CANCircularBuffer_isFull (CANCircularBuffer_t *cb)
 {
   return cb->count == CAN_BUFFER_SIZE;
 }
 
 // Check if buffer is empty
 inline int8_t __attribute__ ((always_inline, optimize("-O3")))
-CAN_IsBufferEmpty (CircularBuffer_t *cb)
+CANCircularBuffer_isEmpty (CANCircularBuffer_t *cb)
 {
   return cb->count == 0;
 }
 
 // Add message to buffer
 int8_t
-CAN_EnqueueMessage (CircularBuffer_t *cb, CAN_Message_t *msg)
+CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
 {
-  if (CAN_IsBufferFull (cb))
+  if (CANCircularBuffer_isFull (cb))
     {
       return 0; // Buffer is full
     }
   cb->buffer[cb->head] = *msg;
   cb->head = (cb->head + 1) % CAN_BUFFER_SIZE;
-  cb->count++;
+  ++cb->count;
   return 1;
 }
 
 int8_t
-CAN_GetMessage (CircularBuffer_t *cb, CAN_Message_t *msg)
+CANCircularBuffer_getMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
 {
-  if (CAN_IsBufferEmpty (cb))
+  if (CANCircularBuffer_isEmpty (cb))
     {
       return 0; // Buffer is empty
     }
@@ -252,49 +217,46 @@ CAN_GetMessage (CircularBuffer_t *cb, CAN_Message_t *msg)
 }
 
 int8_t __attribute__ ((optimize("-O3")))
-CAN_DeleteMessage (CircularBuffer_t *cb)
+CANCircularBuffer_deleteMessage (CANCircularBuffer_t *cb)
 {
-  if (CAN_IsBufferEmpty (cb))
+  if (CANCircularBuffer_isEmpty (cb))
     {
       return 0; // Buffer is empty
     }
   cb->tail = (cb->tail + 1) % CAN_BUFFER_SIZE;
-  cb->count--;
+  --cb->count;
   return 1;
 }
 
 // Remove message from buffer
 int8_t
-CAN_DequeueMessage (CircularBuffer_t *cb, CAN_Message_t *msg)
+CANCircularBuffer_dequeueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
 {
-  if (CAN_IsBufferEmpty (cb))
+  if (CANCircularBuffer_isEmpty (cb))
     {
       return 0; // Buffer is empty
     }
-
   *msg = cb->buffer[cb->tail];
   cb->tail = (cb->tail + 1) % CAN_BUFFER_SIZE;
-  cb->count--;
+  --cb->count;
   return 1;
 }
 
 // Transmit handler (called periodically or in main loop)
-void  __attribute__ ((optimize("-O3")))
+void __attribute__ ((optimize("-O3")))
 CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 {
   CAN_Message_t msg;
-  for (; (CAN_IsBufferEmpty (&canTxBuffer) == 0)
-//	  && ((HAL_GetTick () - tmstmp) < CAN_TRANSMITHANDLER_LIFETIME_MS)
-      ;)
+  for (; (CANCircularBuffer_isEmpty (&canTxBuffer) == 0);)
     {
-      if (CAN_GetMessage (&canTxBuffer, &msg))
+      if (CANCircularBuffer_getMessage (&canTxBuffer, &msg))
 	{
 	  if ((HAL_GetTick () - msg.timestamp) > CAN_MSG_LIFETIME_MS)
 	    {
-	      CAN_DeleteMessage (&canTxBuffer);
+	      CANCircularBuffer_deleteMessage (&canTxBuffer);
 	      continue;
 	    }
-	  if (canState == CAN_IDLE)
+	  if (canState == e_CANMachineState_IDLE)
 	    {
 #if CAN_MSG_BURST_DELAY_MS
 	      if ((HAL_GetTick () - canTxLast_ms) > CAN_MSG_BURST_DELAY_MS)
@@ -308,7 +270,7 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 		  memcpy (&hcan->pTxMsg->Data[0], &msg.data[0], msg.dlc);
 		  if (HAL_CAN_Transmit_IT (hcan) == HAL_OK)
 		    {
-		      canState = CAN_SENDING; // Set state to sending
+		      canState = e_CANMachineState_SENDING; // Set state to sending
 		      return;
 		    }
 #if CAN_MSG_BURST_DELAY_MS
@@ -321,9 +283,9 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 	    }
 	}
     }
-  if (CAN_IsBufferEmpty (&canTxBuffer))
+  if (CANCircularBuffer_isEmpty (&canTxBuffer))
     {
-      canState = CAN_IDLE;
+      canState = e_CANMachineState_IDLE;
     }
 }
 
@@ -331,8 +293,8 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 void __attribute__ ((optimize("-O3")))
 CAN_TransmitCallback (CAN_HandleTypeDef *hcan)
 {
-  CAN_DeleteMessage(&canTxBuffer);
-  canState = CAN_IDLE; // Set state back to idle
+  CANCircularBuffer_deleteMessage(&canTxBuffer);
+  canState = e_CANMachineState_IDLE; // Set state back to idle
 }
 
 void
@@ -361,15 +323,7 @@ void modify_aurt_as_test_led(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-//  while(1)
-//    {
-//      HAL_Delay(250);
-//      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
-//    }
 }
-
-static uint8_t canRxMsg[8];
-volatile int8_t canRxFlag = 0;
 
 typedef enum
 {
@@ -377,7 +331,19 @@ typedef enum
   e_can_machine_state_idle
 } e_can_machine_state;
 
-e_can_machine_state can_machine_state = e_can_machine_state_init;
+static e_can_machine_state can_machine_state = e_can_machine_state_init;
+
+void __attribute__ ((cold, optimize("-Os")))
+can_machine_init_0 (void)
+{
+  can_machine_state = e_can_machine_state_init;
+  canState = e_CANMachineState_IDLE;
+  canTxLast_ms = HAL_GetTick ();
+
+  hcan.pTxMsg = &CanTxBuffer;
+  hcan.pRxMsg = &CanRxBuffer;
+}
+
 void
 can_machine (void)
 {
@@ -385,8 +351,9 @@ can_machine (void)
     {
     case e_can_machine_state_init:
       {
+	can_machine_init_0();
 	can_machine_state = e_can_machine_state_idle;
-	canState = CAN_IDLE;
+	canState = e_CANMachineState_IDLE;
 	canTxLast_ms = HAL_GetTick ();
 
 	/* CAN interrupt Init */

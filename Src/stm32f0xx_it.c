@@ -157,30 +157,16 @@ void DMA1_Channel1_IRQHandler(void)
 extern CAN_HandleTypeDef hcan;
 void CEC_CAN_IRQHandler(void)
 {
-	HAL_CAN_IRQHandler(&hcan);
+  HAL_CAN_IRQHandler(&hcan);
 }
 
 extern UART_HandleTypeDef huart2;
-void USART2_IRQHandler(void)
+void USART2_IRQHandler (void)
 {
-	UART_HandleTypeDef * huart = &huart2;
-//	uint16_t uhMask = huart->Mask;
-//	huart->rx = huart->Instance->RDR & (uint8_t)uhMask;
-//	HAL_UART_RxCpltCallback(&huart2);
-	UART_Receive_IT(huart);
+  UART_HandleTypeDef *huart = &huart2;
+  UART_Receive_IT (huart);
 
 }
 
-extern TIM_HandleTypeDef htim2;
-void TIM2_IRQHandler(void)
-{
-  /* USER CODE BEGIN TIM2_IRQn 0 */
-
-  /* USER CODE END TIM2_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim2);
-  /* USER CODE BEGIN TIM2_IRQn 1 */
-
-  /* USER CODE END TIM2_IRQn 1 */
-}
 /* USER CODE END 1 */
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

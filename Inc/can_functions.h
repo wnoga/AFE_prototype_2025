@@ -16,7 +16,6 @@ extern CAN_HandleTypeDef hcan;
 extern IWDG_HandleTypeDef hiwdg;
 extern UART_HandleTypeDef huart2;
 extern SPI_HandleTypeDef hspi1;
-extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_adc;
 
@@ -26,7 +25,6 @@ extern const uint8_t verArr[];
 extern const size_t verArrLen;
 extern uint32_t UID[];
 
-#define CAN_TRANSMITHANDLER_LIFETIME_MS 10
 #define CAN_MSG_LIFETIME_MS 5000
 #define CAN_BUFFER_SIZE 128
 #define CAN_MSG_RECIEVED_TIMEOUT_MS 3000
@@ -52,9 +50,9 @@ typedef struct {
     can_bs_t head;      // Index for writing new data
     can_bs_t tail;      // Index for reading data
     can_bs_t count;     // Number of elements in the buffer
-} CircularBuffer_t;
+} CANCircularBuffer_t;
 
-extern CircularBuffer_t canTxBuffer;
+extern CANCircularBuffer_t canTxBuffer;
 
 typedef enum
 {
@@ -75,19 +73,16 @@ extern volatile int8_t canRxFlag;
 extern s_can_msg_recieved can_msg_received;
 
 GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator);
-void SetPinFromArray(uint8_t *array);
-GPIO_PinState ReadPinFromArray(uint8_t *array);
 
 // Add message to buffer
-int8_t CAN_EnqueueMessage (CircularBuffer_t *cb, CAN_Message_t *msg);
-
-void can_machine_new_message_received(CanRxMsgTypeDef *new_msg);
+int8_t CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg);
 
 HAL_StatusTypeDef configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id);
-void modify_aurt_as_test_led(void);
+void modify_aurt_as_test_led (void);
+void can_machine_init_0 (void);
 void can_machine (void);
 
 void _delay (size_t ms);
-void blink1(void);
+void blink1 (void);
 
 #endif /* CAN_FUNCTIONS_H_ */

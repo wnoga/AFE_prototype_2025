@@ -65,7 +65,7 @@ void update_buffer_by_averagingSettings(s_channelSettings *averagingSettings)
   averagingSettings->buffer_ADC->tail = averagingSettings->buffer_ADC->head = 0;
 }
 
-static void enqueueSensorDataSIandTimestamp(CircularBuffer_t *cb, uint8_t command, uint8_t channel,float adc_value_real, uint32_t timestamp)
+static void enqueueSensorDataSIandTimestamp(CANCircularBuffer_t *cb, uint8_t command, uint8_t channel,float adc_value_real, uint32_t timestamp)
 {
 	CAN_Message_t tmp;
 	tmp.id = CAN_ID_IN_MSG;
@@ -75,16 +75,16 @@ static void enqueueSensorDataSIandTimestamp(CircularBuffer_t *cb, uint8_t comman
 	tmp.data[2] = channel;
 	tmp.dlc = 2 + 1 + sizeof(float);
 	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	CAN_EnqueueMessage (cb, &tmp);
+	CANCircularBuffer_enqueueMessage (cb, &tmp);
 	tmp.data[0] = command;
 	tmp.data[1] = 0x22;
 	tmp.data[2] = channel;
 	tmp.dlc = 2 + 1 + sizeof(uint32_t);
 	memcpy (&tmp.data[3], &timestamp, sizeof(float));
-	CAN_EnqueueMessage (cb, &tmp);
+	CANCircularBuffer_enqueueMessage (cb, &tmp);
 }
 
-static void enqueueSensorDataSI(CircularBuffer_t *cb, uint8_t command, uint8_t channel,float adc_value_real)
+static void enqueueSensorDataSI(CANCircularBuffer_t *cb, uint8_t command, uint8_t channel,float adc_value_real)
 {
 	CAN_Message_t tmp;
 	tmp.id = CAN_ID_IN_MSG;
@@ -94,11 +94,11 @@ static void enqueueSensorDataSI(CircularBuffer_t *cb, uint8_t command, uint8_t c
 	tmp.data[2] = channel;
 	tmp.dlc = 2 + 1 + sizeof(float);
 	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	CAN_EnqueueMessage (cb, &tmp);
+	CANCircularBuffer_enqueueMessage (cb, &tmp);
 }
 
 static void
-send_SensorDataSi_average (uint8_t msg_id, uint8_t command, CircularBuffer_t *cb,
+send_SensorDataSi_average (uint8_t msg_id, uint8_t command, CANCircularBuffer_t *cb,
 			   s_channelSettings *ch)
 {
   float adc_value_real;
@@ -111,10 +111,10 @@ send_SensorDataSi_average (uint8_t msg_id, uint8_t command, CircularBuffer_t *cb
   tmp.data[2] = ch->channel_nr;
   tmp.dlc = 2 + 1 + sizeof(float);
   memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-  CAN_EnqueueMessage (cb, &tmp);
+  CANCircularBuffer_enqueueMessage (cb, &tmp);
 }
 static void
-send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, CircularBuffer_t *cb,
+send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, CANCircularBuffer_t *cb,
 				       s_channelSettings *ch, uint32_t timestamp)
 {
   float adc_value_real;
@@ -127,13 +127,13 @@ send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, Circular
   tmp.data[2] = ch->channel_nr;
   tmp.dlc = 2 + 1 + sizeof(float);
   memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-  CAN_EnqueueMessage (cb, &tmp);
+  CANCircularBuffer_enqueueMessage (cb, &tmp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (1, 2);
   tmp.data[2] = ch->channel_nr;
   tmp.dlc = 2 + 1 + sizeof(uint32_t);
   memcpy (&tmp.data[3], &timestamp, sizeof(float));
-  CAN_EnqueueMessage (cb, &tmp);
+  CANCircularBuffer_enqueueMessage (cb, &tmp);
 }
 
 static void
@@ -467,7 +467,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    tmp.data[1] = get_byte_of_message_number(i0, 3);
 	    // Copy the UID data, byte-by-byte
 	    memcpy (&tmp.data[2], (uint8_t*) &UID[i0], sizeof(uint32_t));
-	    CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	  }
 	break;
       }
@@ -475,7 +475,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
       {
 	tmp.dlc = 2 + verArrLen;
 	memcpy (&tmp.data[2], &verArr[0], verArrLen);
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case 0x02: // setValue0
@@ -483,7 +483,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1;
 	value0 = *((uint32_t*) &msg.Data[2]);
 	tmp.data[2] = 1;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_resetAll: // resetAll
@@ -503,7 +503,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[2] = channel;
 	tmp.dlc = 2 + 1 + sizeof(float);
 	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]  */
@@ -515,7 +515,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[2] = channel;
 	tmp.dlc = 2 + 1 + sizeof(float);
 	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
       /* Send SI data [Data[0]] from all channels as float average value[Data[3:7]]  */
@@ -530,7 +530,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    tmp.data[2] = channel;
 	    tmp.dlc = 2 + 1 + sizeof(float);
 	    memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	    CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	  }
 	break;
       }
@@ -546,7 +546,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    tmp.data[2] |= 1 << channel; // Set flag if this channel is set
 	  }
 	tmp.dlc = 2 + 1;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]
@@ -585,12 +585,12 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	if (spiDataLen > 5)
 	  {
 	    tmp.data[2] = HAL_ERROR;
-	    CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	    break;
 	  }
 	memcpy (&spiData[0], &msg.Data[3], spiDataLen);
 	tmp.data[2] = machine_SPI_Transmit (&hspi1, &spiData[0], spiDataLen, TIMEOUT_SPI1_MS);
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 #warning "Test SPI!" // TODO Test SPI
 	break;
       }
@@ -613,7 +613,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[3] = msg.Data[3];
 	tmp.data[4] = msg.Data[4];
 	tmp.dlc = 5;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
 
@@ -647,7 +647,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[2] = channel;
 	tmp.data[3] = status;
 	tmp.dlc = 2 + 1 + 1;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setTemperatureLoopForChannelState_byMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
@@ -666,7 +666,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	      }
 	    tmp.data[3] |= regulatorSettings[i0].enabled << i0;
 	  }
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setDACValueRaw_bySubdevice: // set [Data[3] temperature loop for channel [Data[2]]
@@ -698,7 +698,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[2] = channel;
 	tmp.data[3] = value;
 	tmp.dlc = 2 + 1 + 1;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setDACValueSi_bySubdevice: // set [Data[3] temperature loop for channel [Data[2]]
@@ -733,7 +733,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[2] = channel;
 	tmp.data[3] = value;
 	tmp.dlc = 2 + 1 + 1;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_stopTemperatureLoopForAllChannels: // stop temperature loop for all channels
@@ -744,7 +744,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	  }
 	tmp.data[2] = 1;
 	tmp.dlc = 2 + 1;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setDAC_bySubdevice: // Start or stop DAC
@@ -773,7 +773,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	    break;
 	  }
 	tmp.dlc = 2 + 2;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setDACRampOneBytePerMillisecond_ms:
@@ -792,7 +792,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1 + 1;
 	tmp.data[2] = channel;
 	tmp.data[3] = (uint8_t) channelSettings[channel].averaging_method;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setAveragingAlpha: // set averagingSettings.alpha
@@ -803,7 +803,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1 + 4;
 	tmp.data[2] = channel;
 	memcpy (&tmp.data[3], &channelSettings[channel].alpha, sizeof(float));
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setAveragingBufferSize: // set averagingSettings.buffer_size
@@ -814,7 +814,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1 + 4;
 	tmp.data[2] = channel;
 	memcpy (&tmp.data[3], &channelSettings[channel].buffer_size, 4);
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setChannel_dt_ms:
@@ -825,7 +825,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1 + 4;
 	tmp.data[2] = channel;
 	memcpy (&tmp.data[3], &channelSettings[channel].dt_ms, 4);
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setAveraging_max_dt_ms: // set averagingSettings.max_dt_ms
@@ -836,7 +836,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1 + 4;
 	tmp.data[2] = channel;
 	memcpy (&tmp.data[3], &channelSettings[channel].max_dt_ms, 4);
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setChannel_multiplicator: // set averagingSettings.multiplicator
@@ -847,7 +847,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.dlc = 2 + 1 + 4;
 	tmp.data[2] = channel;
 	memcpy (&tmp.data[3], &channelSettings[channel].multiplicator, 4);
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setAveragingSubdevice: // set averagingSettings.subdevice
@@ -887,7 +887,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 	tmp.data[5] = 0xAB;
 	tmp.data[6] = 0xCD;
 	tmp.data[7] = 0xEF;
-	CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     }
@@ -956,25 +956,25 @@ machine_control (void)
 	  tmp.data[2] = channel;
 	  tmp.dlc = 2 + 1 + sizeof(float);
 	  memcpy (&tmp.data[3], &voltage_for_SiPM, sizeof(float));
-	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	  CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	  // Average temperature
 	  tmp.data[1] = get_byte_of_message_number (1, 4);
 	  tmp.data[2] = channel;
 	  tmp.dlc = 2 + 1 + sizeof(float);
 	  memcpy (&tmp.data[3], &average_Temperature, sizeof(float));
-	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	  CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	  // Old temperature
 	  tmp.data[1] = get_byte_of_message_number (2, 4);
 	  tmp.data[2] = channel;
 	  tmp.dlc = 2 + 1 + sizeof(float);
 	  memcpy (&tmp.data[3], &regulatorSettings_ptr->T_old, sizeof(float));
-	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	  CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	  // Timestamp
 	  tmp.data[1] = get_byte_of_message_number (3, 4);
 	  tmp.data[2] = channel;
 	  tmp.dlc = 2 + 1 + sizeof(uint32_t);
 	  memcpy (&tmp.data[3], &timestamp_ms, sizeof(uint32_t));
-	  CAN_EnqueueMessage (&canTxBuffer, &tmp);
+	  CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 #endif
 	  regulatorSettings_ptr->ramp_target_voltage_set_bits =
 	      machine_DAC_convert_mv_to_dac_value (voltage_for_SiPM);
