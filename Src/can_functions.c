@@ -139,15 +139,6 @@ e_CANMachineState canState = e_CANMachineState_IDLE;
 uint32_t canTxLast_ms = 0;
 #define CAN_MSG_BURST_DELAY_MS 100
 
-// Function prototypes
-void CANCircularBuffer_Init(CANCircularBuffer_t *cb);
-int8_t CANCircularBuffer_isFull(CANCircularBuffer_t *cb);
-int8_t CANCircularBuffer_isEmpty(CANCircularBuffer_t *cb);
-int8_t CANCircularBuffer_enqueueMessage(CANCircularBuffer_t *cb, CAN_Message_t *msg);
-int8_t CANCircularBuffer_dequeueMessage(CANCircularBuffer_t *cb, CAN_Message_t *msg);
-void CAN_TransmitHandler(CAN_HandleTypeDef *hcan);
-void CAN_TransmitCallback(CAN_HandleTypeDef *hcan);
-
 void
 HAL_CAN_TxCpltCallback (CAN_HandleTypeDef *hcan)
 {
@@ -196,23 +187,22 @@ CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
     {
       return 0; // Buffer is full
     }
-  cb->buffer[cb->head] = *msg;
+  memcpy (&cb->buffer[cb->head],msg,sizeof(*msg));
   cb->head = (cb->head + 1) % CAN_BUFFER_SIZE;
   ++cb->count;
   return 1;
 }
 
-int8_t
-CANCircularBuffer_getMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
+CAN_Message_t*
+CANCircularBuffer_getMessage (CANCircularBuffer_t *cb)
 {
   if (CANCircularBuffer_isEmpty (cb))
     {
-      return 0; // Buffer is empty
+      return NULL; // Buffer is empty
     }
   else
     {
-      *msg = cb->buffer[cb->tail];
-      return 1;
+      return &cb->buffer[cb->tail];
     }
 }
 
@@ -229,58 +219,55 @@ CANCircularBuffer_deleteMessage (CANCircularBuffer_t *cb)
 }
 
 // Remove message from buffer
-int8_t
-CANCircularBuffer_dequeueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
+CAN_Message_t*
+CANCircularBuffer_dequeueMessage (CANCircularBuffer_t *cb)
 {
   if (CANCircularBuffer_isEmpty (cb))
     {
       return 0; // Buffer is empty
     }
-  *msg = cb->buffer[cb->tail];
+  CAN_Message_t *msg = &cb->buffer[cb->tail];
   cb->tail = (cb->tail + 1) % CAN_BUFFER_SIZE;
   --cb->count;
-  return 1;
+  return msg;
 }
 
 // Transmit handler (called periodically or in main loop)
 void __attribute__ ((optimize("-O3")))
 CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 {
-  CAN_Message_t msg;
-  for (; (CANCircularBuffer_isEmpty (&canTxBuffer) == 0);)
+  CAN_Message_t *msg;
+  while ((msg = CANCircularBuffer_getMessage (&canTxBuffer)))
     {
-      if (CANCircularBuffer_getMessage (&canTxBuffer, &msg))
+      if ((HAL_GetTick () - msg->timestamp) > CAN_MSG_LIFETIME_MS)
 	{
-	  if ((HAL_GetTick () - msg.timestamp) > CAN_MSG_LIFETIME_MS)
-	    {
-	      CANCircularBuffer_deleteMessage (&canTxBuffer);
-	      continue;
-	    }
-	  if (canState == e_CANMachineState_IDLE)
-	    {
+	  CANCircularBuffer_deleteMessage (&canTxBuffer);
+	  continue;
+	}
+      if (canState == e_CANMachineState_IDLE)
+	{
 #if CAN_MSG_BURST_DELAY_MS
-	      if ((HAL_GetTick () - canTxLast_ms) > CAN_MSG_BURST_DELAY_MS)
-		{
+	  if ((HAL_GetTick () - canTxLast_ms) > CAN_MSG_BURST_DELAY_MS)
+	    {
 #endif // CAN_MSG_BURST_DELAY_MS
-		  canTxLast_ms = HAL_GetTick ();
-		  hcan->pTxMsg->StdId = msg.id;
-		  hcan->pTxMsg->DLC = msg.dlc;
-		  hcan->pTxMsg->IDE = CAN_ID_STD;
-		  hcan->pTxMsg->RTR = CAN_RTR_DATA;
-		  memcpy (&hcan->pTxMsg->Data[0], &msg.data[0], msg.dlc);
-		  if (HAL_CAN_Transmit_IT (hcan) == HAL_OK)
-		    {
-		      canState = e_CANMachineState_SENDING; // Set state to sending
-		      return;
-		    }
-#if CAN_MSG_BURST_DELAY_MS
-		}
-	      else
+	      canTxLast_ms = HAL_GetTick ();
+	      hcan->pTxMsg->StdId = msg->id;
+	      hcan->pTxMsg->DLC = msg->dlc;
+	      hcan->pTxMsg->IDE = CAN_ID_STD;
+	      hcan->pTxMsg->RTR = CAN_RTR_DATA;
+	      memcpy (&hcan->pTxMsg->Data[0], &msg->data[0], msg->dlc);
+	      if (HAL_CAN_Transmit_IT (hcan) == HAL_OK)
 		{
+		  canState = e_CANMachineState_SENDING; // Set state to sending
 		  return;
 		}
-#endif // CAN_MSG_BURST_DELAY_MS
+#if CAN_MSG_BURST_DELAY_MS
 	    }
+	  else
+	    {
+	      return;
+	    }
+#endif // CAN_MSG_BURST_DELAY_MS
 	}
     }
   if (CANCircularBuffer_isEmpty (&canTxBuffer))

@@ -37,7 +37,7 @@ typedef size_t can_bs_t;
 #endif
 
 // CAN Message structure
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint32_t id;       // CAN ID
     uint8_t data[8];   // CAN Data payload
     uint8_t dlc;       // Data Length Code
@@ -45,14 +45,12 @@ typedef struct {
 } CAN_Message_t;
 
 // Circular buffer structure
-typedef struct {
+typedef struct __attribute__((packed)) {
     CAN_Message_t buffer[CAN_BUFFER_SIZE];
     can_bs_t head;      // Index for writing new data
     can_bs_t tail;      // Index for reading data
     can_bs_t count;     // Number of elements in the buffer
 } CANCircularBuffer_t;
-
-extern CANCircularBuffer_t canTxBuffer;
 
 typedef enum
 {
@@ -62,7 +60,7 @@ typedef enum
   e_CANIdFunctionCode_multipleRead = 0b11, // Reserved
 } e_CANIdFunctionCode;
 
-typedef struct
+typedef struct __attribute__((packed))
 {
   uint32_t timestamp;
   uint32_t DLC;
@@ -71,10 +69,10 @@ typedef struct
 
 extern volatile int8_t canRxFlag;
 extern s_can_msg_recieved can_msg_received;
+extern CANCircularBuffer_t canTxBuffer;
 
 GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator);
 
-// Add message to buffer
 int8_t CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg);
 
 HAL_StatusTypeDef configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id);

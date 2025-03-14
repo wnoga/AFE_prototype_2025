@@ -16,14 +16,14 @@
 #define MAX_BUFFER_ADC_SIZE 128
 
 // Structure to store ADC measurement and timestamp
-typedef struct
+typedef struct __attribute__((packed))
 {
   uint16_t adc_value; // Raw ADC value (assuming 10-bit ADC, adjust based on resolution)
   uint32_t timestamp_ms; // Timestamp in milliseconds since MCU start
 } s_ADC_Measurement;
 
 // Circular buffer structure
-typedef struct
+typedef struct __attribute__((packed))
 {
 //    ADC_Measurement buffer[MAX_BUFFER_SIZE]; // Array of ADC measurements
   s_ADC_Measurement *buffer;

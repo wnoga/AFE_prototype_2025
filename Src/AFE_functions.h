@@ -106,9 +106,9 @@ typedef enum
   e_average_WEIGHTED_EXPONENTIAL
 } e_average;
 
-typedef struct
+typedef struct __attribute__((packed))
 {
-    uint8_t channel_nr; // ADC channel number
+  uint8_t channel_nr; // ADC channel number
   // exponential
   e_subdevice subdevice; // master or slave
   s_BufferADC *buffer_ADC; // pointer to buffer for ADC structure
@@ -131,7 +131,7 @@ typedef struct
 
 } s_channelSettings;
 
-typedef struct
+typedef struct __attribute__((packed))
 {
   e_subdevice subdevice;
   s_channelSettings *temperature_channelSettings_ptr;
