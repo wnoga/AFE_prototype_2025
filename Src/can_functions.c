@@ -67,18 +67,21 @@ GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator)
  * @param own_id The device's own ID (8-bit receiver ID)
  * @return 1 if ID are equal
  */
-static int
+inline static int __attribute__ ((always_inline, optimize("-O3")))
 is_this_msg_for_me (CanRxMsgTypeDef *rxCanMsg, uint8_t own_id)
 {
   if (rxCanMsg->IDE != CAN_ID_STD)
     {
       return 0;
     }
-  if (own_id == (0xFF & (rxCanMsg->StdId >> 2)))
+  else if (own_id == (0xFF & (rxCanMsg->StdId >> 2)))
     {
       return 1;
     }
-  return 0;
+  else
+    {
+      return 0;
+    }
 }
 
 /**
@@ -137,7 +140,6 @@ typedef enum
 CANCircularBuffer_t canTxBuffer;
 e_CANMachineState canState = e_CANMachineState_IDLE;
 uint32_t canTxLast_ms = 0;
-#define CAN_MSG_BURST_DELAY_MS 100
 
 void
 HAL_CAN_TxCpltCallback (CAN_HandleTypeDef *hcan)
@@ -157,7 +159,7 @@ HAL_CAN_ErrorCallback (CAN_HandleTypeDef *hcan)
 }
 
 // Initialize circular buffer
-void
+void __attribute__ ((cold, optimize("-Os")))
 CANCircularBuffer_Init (CANCircularBuffer_t *cb)
 {
   cb->head = 0;
@@ -180,30 +182,26 @@ CANCircularBuffer_isEmpty (CANCircularBuffer_t *cb)
 }
 
 // Add message to buffer
-int8_t
+int8_t __attribute__ ((optimize("-O3")))
 CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
 {
   if (CANCircularBuffer_isFull (cb))
     {
       return 0; // Buffer is full
     }
-  memcpy (&cb->buffer[cb->head],msg,sizeof(*msg));
-  cb->head = (cb->head + 1) % CAN_BUFFER_SIZE;
-  ++cb->count;
-  return 1;
-}
-
-CAN_Message_t*
-CANCircularBuffer_getMessage (CANCircularBuffer_t *cb)
-{
-  if (CANCircularBuffer_isEmpty (cb))
-    {
-      return NULL; // Buffer is empty
-    }
   else
     {
-      return &cb->buffer[cb->tail];
+      memcpy (&cb->buffer[cb->head], msg, sizeof(*msg));
+      cb->head = (cb->head + 1) % CAN_BUFFER_SIZE;
+      ++cb->count;
+      return 1;
     }
+}
+
+static CAN_Message_t*
+CANCircularBuffer_getMessage (CANCircularBuffer_t *cb)
+{
+  return CANCircularBuffer_isEmpty (cb) ? NULL : &cb->buffer[cb->tail];
 }
 
 int8_t __attribute__ ((optimize("-O3")))
@@ -213,9 +211,12 @@ CANCircularBuffer_deleteMessage (CANCircularBuffer_t *cb)
     {
       return 0; // Buffer is empty
     }
-  cb->tail = (cb->tail + 1) % CAN_BUFFER_SIZE;
-  --cb->count;
-  return 1;
+  else
+    {
+      cb->tail = (cb->tail + 1) % CAN_BUFFER_SIZE;
+      --cb->count;
+      return 1;
+    }
 }
 
 // Remove message from buffer

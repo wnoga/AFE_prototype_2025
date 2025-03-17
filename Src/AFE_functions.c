@@ -17,7 +17,7 @@ get_voltage_for_SiPM (float T, float a, float T_0, float U_0, float U_cor)
   return a * (T - T_0) + U_0 + U_cor;
 }
 
-float __attribute__ ((optimize("-O3")))
+inline float __attribute__ ((always_inline, optimize("-O3")))
 get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings)
 {
   return get_voltage_for_SiPM (T, regulatorSettings->a, regulatorSettings->T_0,
@@ -141,11 +141,12 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       N = cb_count;
     }
 
+  /* Get last saved item from the buffer */
   size_t start_index = (cb->head == 0) ? (cb->buffer_size - 1) : (cb->head - 1);
   size_t count = 0;
   float sum = 0.0f;
   float weight_sum = 0.0f;
-
+  float value;
   for (size_t i0 = 0; i0 < N; i0++)
     {
       if (check_time_diff_is_more_than (cb->buffer[start_index].timestamp_ms, timestamp_ms,
@@ -153,7 +154,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	{
 	  break;
 	}
-      float value = cb->buffer[start_index].adc_value;
+      value = cb->buffer[start_index].adc_value;
       switch (method)
 	{
 	case e_average_STANDARD:

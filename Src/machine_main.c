@@ -443,7 +443,7 @@ get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
 
 static uint32_t value0;
 void __attribute__ ((optimize("-O3")))
-can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
+can_execute (const s_can_msg_recieved msg)
 {
   CAN_Message_t tmp;
   uint8_t command = (uint8_t)msg.Data[0];
@@ -455,8 +455,7 @@ can_execute (s_can_msg_recieved msg, CAN_HandleTypeDef *hcan)
 		      // (0xF0 >> 4) = total number of messages in queue
 		      // (0x0F) = message number (in the queue)
   tmp.dlc = 8;
-//  blink1();
-  switch (command)
+  switch ((AFECommand)command)
     {
     case AFECommand_getSerialNumber: // getSerialNumber
       {
@@ -1078,7 +1077,7 @@ machine_main (void)
 	  {
 	    canRxFlag = 0;
 	    /* Execute command */
-	    can_execute (can_msg_received, &hcan);
+	    can_execute (can_msg_received);
 	  }
 
 	machine_control ();

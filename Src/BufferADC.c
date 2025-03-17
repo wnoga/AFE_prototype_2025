@@ -33,23 +33,13 @@ init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uin
   cb->buffer[0].adc_value = 0;
 }
 
-size_t
+inline size_t __attribute__ ((always_inline, optimize("-O3")))
 CircularBuffer_GetItemCount (const s_BufferADC *cb)
 {
-  // Check if the head has wrapped around or not
-  if (cb->head >= cb->tail)
-    {
-      // Buffer is either partially filled or full without wrapping
-      return cb->head - cb->tail;
-    }
-  else
-    {
-      // Buffer has wrapped around
-      return cb->buffer_size - (cb->tail - cb->head);
-    }
+  return cb->head >= cb->tail ? cb->head - cb->tail : cb->buffer_size - (cb->tail - cb->head);
 }
 
-int
+int __attribute__ ((optimize("-O3")))
 check_time_diff_is_more_than (uint32_t measurement_timestamp_ms, uint32_t timestamp_ms,
 			      uint32_t max_dt_ms, uint32_t dt_ms)
 {
@@ -60,15 +50,17 @@ check_time_diff_is_more_than (uint32_t measurement_timestamp_ms, uint32_t timest
     {
       return 1;
     }
-  return 0;
+  else
+    {
+      return 0;
+    }
 }
 
-size_t
+size_t __attribute__ ((optimize("-O3")))
 get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N,
 				    s_ADC_Measurement *here,
 				    uint32_t timestamp_ms, uint32_t max_dt_ms)
 {
-//  if(cb->count == 0)
   if(cb->head == cb->tail)
     {
       return 0;

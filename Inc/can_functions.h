@@ -28,6 +28,8 @@ extern uint32_t UID[];
 #define CAN_MSG_LIFETIME_MS 5000
 #define CAN_BUFFER_SIZE 128
 #define CAN_MSG_RECIEVED_TIMEOUT_MS 3000
+#define CAN_MSG_BURST_DELAY_MS 100
+
 #if CAN_BUFFER_SIZE <= 0xFF
 typedef uint8_t can_bs_t;
 #elif CAN_BUFFER_SIZE <= 0xFFFF

@@ -191,6 +191,7 @@ int main(void)
 //    __HAL_DBGMCU_FREEZE_IWDG();
 
     machine_main_init_0();
+    can_machine_init_0();
     while(1)
       {
 	machine_main();
