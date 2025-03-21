@@ -6,8 +6,12 @@
  */
 
 #include "AFE_functions.h"
-#include <stm32f0xx_hal.h>
 #include <math.h>
+#if defined STM32F0
+#include <stm32f0xx_hal.h>
+#else
+#include "main.h"
+#endif
 
 /* Driver */
 
@@ -125,7 +129,21 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float al
   return result;
 }
 
-static inline size_t __attribute__ ((optimize("-O3")))
+inline size_t __attribute__ ((always_inline, optimize("-O3")))
+next_index (size_t i, size_t i_0, size_t N, size_t buffer_size,
+	    uint8_t backward)
+{
+  if (backward)
+    {
+      return (i_0 - N + i) % buffer_size; // increment from tail
+    }
+  else
+    {
+      return (i_0 - i) % buffer_size; // increment from tail
+    }
+}
+
+static size_t __attribute__ ((optimize("-O0")))
 get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms,
 			 e_average method, float *average_result, float alpha, float multiplicator)
 {
@@ -134,27 +152,57 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       *average_result = NAN;
       return 0;
     }
-
   size_t cb_count = CircularBuffer_GetItemCount (cb);
-  if (N > cb_count)
+  size_t i_0 = ((cb->head-1)) % cb->buffer_size;
+  s_ADC_Measurement *ptr0 = &cb->buffer[i_0];
+  if ((cb_count == 1) || (method == e_average_NONE))
+    {
+      *average_result = ptr0->adc_value * multiplicator;
+      return 1;
+    }
+  else if (N > cb_count)
     {
       N = cb_count;
     }
 
-  /* Get last saved item from the buffer */
-  size_t start_index = (cb->head == 0) ? (cb->buffer_size - 1) : (cb->head - 1);
   size_t count = 0;
   float sum = 0.0f;
   float weight_sum = 0.0f;
   float value;
-  for (size_t i0 = 0; i0 < N; i0++)
+  s_ADC_Measurement *ptr;
+  size_t i;
+  size_t cnt = 0;
+      if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
     {
-      if (check_time_diff_is_more_than (cb->buffer[start_index].timestamp_ms, timestamp_ms,
-					max_dt_ms, cb->dt_ms) && (max_dt_ms != 0))
+      sum = NAN;
+    }
+  for (count = 0; count < N; ++count)
+    {
+      if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
 	{
-	  break;
+	  // Here is place for a moving averages
+	  i = (i_0 - N + count) % cb->buffer_size; // increment from tail
+	  ptr = &cb->buffer[i];
+	  if ((timestamp_ms - ptr->timestamp_ms) > max_dt_ms)
+	    {
+	      continue;
+	    }
 	}
-      value = cb->buffer[start_index].adc_value;
+      else
+	{
+	  i = (i_0 - count) % cb->buffer_size; // decrement buffer index from head index
+	  ptr = &cb->buffer[i];
+	  if ((timestamp_ms - ptr->timestamp_ms) > max_dt_ms)
+	    {
+	      break;
+	    }
+	}
+      value = ptr->adc_value;
+      if (isnanf (value))
+	{
+	  continue;
+	}
+      ++cnt;
       switch (method)
 	{
 	case e_average_STANDARD:
@@ -164,7 +212,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	  }
 	case e_average_EXPONENTIAL:
 	  {
-	    sum = alpha * value + (1 - alpha) * sum;
+	    sum = (alpha * value) + ((1.0 - alpha) * sum);
 	    break;
 	  }
 	case e_average_RMS:
@@ -182,71 +230,73 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	  }
 	case e_average_GEOMETRIC:
 	  {
-	    sum = (i0 == 0) ? value : sum * value;
+	    sum = (cnt == 0) ? value : sum * value;
 	    break;
 	  }
 	case e_average_WEIGHTED_EXPONENTIAL:
 	  {
-	    float r = timestamp_ms - cb->buffer[start_index].timestamp_ms;
-	    float weight = expf (-fabsf (r / alpha));
-	    sum += value * weight;
+	    float r = fabsf(timestamp_ms - ptr->timestamp_ms);
+	    float weight = expf(-r*alpha);
+	    sum += (weight*value);
 	    weight_sum += weight;
+	    break;
 	  }
-	  break;
 	default:
 	  break;
 	}
-      count++;
-      start_index = (start_index == 0) ? (cb->buffer_size - 1) : (start_index - 1);
     }
 
+  if (cnt == 0)
+    {
+      *average_result = NAN;
+      return 0;
+    }
   switch (method)
     {
     case e_average_STANDARD:
       {
-	*average_result = (count != 0) ? sum / count : 0.0f;
+	*average_result = (cnt != 0) ? sum / cnt : ptr0->adc_value;
 	break;
       }
     case e_average_EXPONENTIAL:
-      // don't break
+      {
+	*average_result = sum;
+	break;
+      }
     case e_average_WEIGHTED_EXPONENTIAL:
       {
-	*average_result = (weight_sum != 0) ? sum / weight_sum : 0.0f;
+	*average_result = (weight_sum != 0) ? sum / weight_sum : ptr0->adc_value;
 	break;
       }
     case e_average_RMS:
       {
-	*average_result = sqrt (sum / count);
+	*average_result = sqrt (sum / cnt);
 	break;
       }
     case e_average_HARMONIC:
       {
-	*average_result = (sum != 0) ? count / sum : 0.0f;
+	*average_result = (sum != 0) ? cnt / sum : 0.0f;
 	break;
       }
     case e_average_GEOMETRIC:
       {
-	*average_result = pow (sum, 1.0 / count);
+	*average_result = pow (sum, 1.0 / cnt);
 	break;
       }
     default:
       {
-	*average_result = 0.0f;
+	*average_result = ptr0->adc_value;
 	break;
       }
     }
-  if (count == 0)
-    {
-      *average_result = NAN;
-    }
   *average_result = (*average_result) * multiplicator;
-  return count;
+  return cnt;
 }
 
 inline size_t __attribute__ ((always_inline, optimize("-O3")))
-get_average_atSettings (s_channelSettings *a, float *here)
+get_average_atSettings (s_channelSettings *a, float *here, uint32_t timestamp)
 {
-  return get_average_from_buffer (a->buffer_ADC, a->max_N, HAL_GetTick (), a->max_dt_ms,
+  return get_average_from_buffer (a->buffer_ADC, a->max_N, timestamp, a->max_dt_ms,
 				  a->averaging_method, here, a->alpha, a->multiplicator);
 }
 

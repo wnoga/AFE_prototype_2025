@@ -8,8 +8,22 @@
 #ifndef AFE_FUNCTIONS_H_
 #define AFE_FUNCTIONS_H_
 
+#define ADC_MEASUREMENT_RAW_SIZE_MAX 256
+#define ADC_NUMBER_OF_CHANNELS 8
+#define NUMBER_OF_SUBDEVICES 2
+#define ADC_MEASUREMENT_RAW_DEFAULT_DT_MS 100
+
+#define AFE_DAC_MAX 0xFFF
+#define AFE_DAC_START 0xFFF
+
+#define AFE_REGULATOR_DEFAULT_a 0.05
+#define AFE_REGULATOR_DEFAULT_T0 25.0
+#define AFE_REGULATOR_DEFAULT_U0 55.0
+#define AFE_REGULATOR_DEFAULT_U_offset 0.0
+#define AFE_REGULATOR_DEFAULT_dT 1.0
+
 #include "BufferADC.h"
-//#include "parser_CAN.h"
+#include <stdio.h>
 
 typedef enum
 {
@@ -113,8 +127,8 @@ typedef struct __attribute__((packed))
   e_subdevice subdevice; // master or slave
   s_BufferADC *buffer_ADC; // pointer to buffer for ADC structure
   /* buffer and averaging settings */
-  size_t buffer_size;
-  uint32_t dt_ms; // time between two measurements
+//  size_t buffer_size;
+//  uint32_t dt_ms; // time between two measurements
   e_average averaging_method;
 //  uint32_t tau; // parameter for averaging
 
@@ -154,7 +168,7 @@ typedef struct __attribute__((packed))
 } s_regulatorSettings;
 
 
-size_t get_average_atSettings (s_channelSettings *a, float *here);
+size_t get_average_atSettings (s_channelSettings *a, float *here, uint32_t timestamp);
 float get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings);
 
 #endif /* AFE_FUNCTIONS_H_ */

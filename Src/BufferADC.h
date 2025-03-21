@@ -12,9 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-#define MAX_BUFFER_ADC_SIZE 128
-
 // Structure to store ADC measurement and timestamp
 typedef struct __attribute__((packed))
 {

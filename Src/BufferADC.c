@@ -14,20 +14,10 @@
 void __attribute__ ((cold, optimize("-Os")))
 init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uint32_t dt_ms)
 {
-//  cb->id = id;
   cb->head = 0;
   cb->tail = 0;
-//  cb->count = 0;
   cb->buffer = buffer;
-  if (buffer_size > MAX_BUFFER_ADC_SIZE)
-    {
-      printf ("ERROR! File: %s line: %u\n", __FILE__, __LINE__);
-      exit (-1);
-    }
-  else
-    {
-      cb->buffer_size = buffer_size;
-    }
+  cb->buffer_size = buffer_size;
   cb->dt_ms = dt_ms;
   cb->buffer[0].timestamp_ms = 0;
   cb->buffer[0].adc_value = 0;
@@ -101,14 +91,16 @@ get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here)
 inline void __attribute__ ((always_inline, optimize("-O3")))
 add_to_buffer (s_BufferADC *cb, const s_ADC_Measurement *measurement)
 {
-  if (cb->tail != cb->head)
+  if (cb->tail != cb->head) // Is not empty
     {
-      if ((measurement->timestamp_ms - cb->buffer[cb->tail].timestamp_ms) < cb->dt_ms)
+      if ((measurement->timestamp_ms
+	  - cb->buffer[(cb->head != 0) ? cb->head - 1 : cb->buffer_size - 1].timestamp_ms)
+	  < cb->dt_ms)
 	{
 	  return;
 	}
     }
-  cb->buffer[cb->head] = *measurement;
+  memcpy (&cb->buffer[cb->head], measurement, sizeof(s_ADC_Measurement));
   cb->head = (cb->head + 1) % cb->buffer_size;
   if (cb->head == cb->tail) // Buffer is full
     {

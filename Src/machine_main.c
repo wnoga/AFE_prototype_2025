@@ -60,8 +60,6 @@ int8_t machine_temperatureLoop_enabled[2];
 
 void update_buffer_by_averagingSettings(s_channelSettings *averagingSettings)
 {
-  averagingSettings->buffer_ADC->buffer_size = averagingSettings->buffer_size;
-  averagingSettings->buffer_ADC->dt_ms = averagingSettings->dt_ms;
   averagingSettings->buffer_ADC->tail = averagingSettings->buffer_ADC->head = 0;
 }
 
@@ -105,7 +103,7 @@ send_SensorDataSi_average (uint8_t msg_id, uint8_t command, CANCircularBuffer_t 
   CAN_Message_t tmp;
   tmp.id = msg_id;
   tmp.timestamp = HAL_GetTick (); // for timeout
-  get_average_atSettings (ch, &adc_value_real);
+  get_average_atSettings (ch, &adc_value_real,tmp.timestamp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (0, 1);
   tmp.data[2] = ch->channel_nr;
@@ -121,7 +119,7 @@ send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, CANCircu
   CAN_Message_t tmp;
   tmp.id = msg_id;
   tmp.timestamp = HAL_GetTick (); // for timeout
-  get_average_atSettings (ch, &adc_value_real);
+  get_average_atSettings (ch, &adc_value_real,tmp.timestamp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (0, 2);
   tmp.data[2] = ch->channel_nr;
@@ -395,7 +393,6 @@ machine_main_init_0 (void)
       channelSettings[i0].averaging_method = e_average_NONE;
       channelSettings[i0].alpha = 1.0;
       channelSettings[i0].buffer_ADC = &bufferADC[i0];
-      channelSettings[i0].buffer_size = ADC_MEASUREMENT_RAW_SIZE_MAX;
       channelSettings[i0].max_dt_ms = 3600 * 1000; // 1 hour
       channelSettings[i0].multiplicator = 1.0;
       channelSettings[i0].a = 1.0;
@@ -407,8 +404,8 @@ machine_main_init_0 (void)
 
       machnie_flag_averaging_enabled[i0] = 0;
 
-      init_buffer (&bufferADC[i0], &adc_measurement_raw[i0][0], channelSettings[i0].buffer_size,
-		   channelSettings[i0].dt_ms);
+      init_buffer (&bufferADC[i0], &adc_measurement_raw[i0][0], ADC_MEASUREMENT_RAW_SIZE_MAX,
+		   ADC_MEASUREMENT_RAW_DEFAULT_DT_MS);
     }
 
   for (uint8_t i0 = 0; i0 < 2; ++i0)
@@ -510,7 +507,7 @@ can_execute (const s_can_msg_recieved msg)
       {
 	uint8_t channel = msg.Data[2];
 	float adc_value_real;
-	get_average_atSettings (&channelSettings[channel], &adc_value_real);
+	get_average_atSettings (&channelSettings[channel], &adc_value_real,tmp.timestamp);
 	tmp.data[2] = channel;
 	tmp.dlc = 2 + 1 + sizeof(float);
 	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
@@ -523,7 +520,7 @@ can_execute (const s_can_msg_recieved msg)
 	for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    float adc_value_real;
-	    get_average_atSettings (&channelSettings[channel], &adc_value_real);
+	    get_average_atSettings (&channelSettings[channel], &adc_value_real,tmp.timestamp);
 	    tmp.data[0] = 0x32;
 	    tmp.data[1] = get_byte_of_message_number (channel, ADC_NUMBER_OF_CHANNELS);
 	    tmp.data[2] = channel;
@@ -808,22 +805,22 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setAveragingBufferSize: // set averagingSettings.buffer_size
       {
 	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].buffer_size, &msg.Data[3], sizeof(uint32_t));
+	memcpy (&channelSettings[channel].buffer_ADC->buffer_size, &msg.Data[3], sizeof(uint32_t));
 	update_buffer_by_averagingSettings(&channelSettings[channel]);
 	tmp.dlc = 2 + 1 + 4;
 	tmp.data[2] = channel;
-	memcpy (&tmp.data[3], &channelSettings[channel].buffer_size, 4);
+	memcpy (&tmp.data[3], &channelSettings[channel].buffer_ADC->buffer_size, 4);
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setChannel_dt_ms:
       {
 	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].dt_ms, &msg.Data[3], sizeof(uint32_t));
+	memcpy (&channelSettings[channel].buffer_ADC->dt_ms, &msg.Data[3], sizeof(uint32_t));
 	update_buffer_by_averagingSettings(&channelSettings[channel]);
 	tmp.dlc = 2 + 1 + 4;
 	tmp.data[2] = channel;
-	memcpy (&tmp.data[3], &channelSettings[channel].dt_ms, 4);
+	memcpy (&tmp.data[3], &channelSettings[channel].buffer_ADC->dt_ms, 4);
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
@@ -863,6 +860,7 @@ can_execute (const s_can_msg_recieved msg)
 	tmp.data[1] = msg.Data[1];
 	tmp.data[2] = msg.Data[2];
 	memcpy(&tmp.data[3],&channelSettings[channel].a,sizeof(float));
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_setChannel_b:
@@ -873,6 +871,7 @@ can_execute (const s_can_msg_recieved msg)
 	tmp.data[1] = msg.Data[1];
 	tmp.data[2] = msg.Data[2];
 	memcpy(&tmp.data[3],&channelSettings[channel].b,sizeof(float));
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     default:
@@ -900,7 +899,7 @@ machine_calculate_averageValues (float *here)
     {
       if (machnie_flag_averaging_enabled[i0])
 	{
-	  here[i0] = get_average_atSettings(&channelSettings[i0], &here[i0]);
+	  here[i0] = get_average_atSettings(&channelSettings[i0], &here[i0],timestamp_now);
 	}
     }
 }
@@ -930,7 +929,7 @@ machine_control (void)
 
       float average_Temperature;
       if (get_average_atSettings (regulatorSettings_ptr->temperature_channelSettings_ptr,
-				  &average_Temperature) == 0)
+				  &average_Temperature, timestamp_ms) == 0)
 	{
 	  /* Skip if cannot calculate average */
 	  continue;
@@ -1038,7 +1037,7 @@ machine_periodic_report (void)
 	    {
 	      float adc_value_real = 0.0;
 	      ptr->period_ms_last = timestamp;
-	      get_average_atSettings (ptr, &adc_value_real);
+	      get_average_atSettings (ptr, &adc_value_real, timestamp);
 	      enqueueSensorDataSIandTimestamp (&canTxBuffer,
 					       AFECommand_getSensorDataSi_all_periodic_average,
 					       channel, adc_value_real, timestamp);
