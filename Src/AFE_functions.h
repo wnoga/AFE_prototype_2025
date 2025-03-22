@@ -117,7 +117,8 @@ typedef enum
   e_average_HARMONIC,
   e_average_GEOMETRIC,
   e_average_TRIMMED,
-  e_average_WEIGHTED_EXPONENTIAL
+  e_average_WEIGHTED_EXPONENTIAL,
+  e_average_ARIMA
 } e_average;
 
 typedef struct __attribute__((packed))

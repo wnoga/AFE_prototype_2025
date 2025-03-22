@@ -6,6 +6,7 @@
  */
 
 #include "AFE_functions.h"
+#include "arima.h"
 #include <math.h>
 #if defined STM32F0
 #include <stm32f0xx_hal.h>
@@ -25,7 +26,8 @@ inline float __attribute__ ((always_inline, optimize("-O3")))
 get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings)
 {
   return get_voltage_for_SiPM (T, regulatorSettings->a, regulatorSettings->T_0,
-			       regulatorSettings->U_0, regulatorSettings->U_offset);
+			       regulatorSettings->U_0,
+			       regulatorSettings->U_offset);
 }
 
 /* COMPUTE FUNCTIONS */
@@ -33,15 +35,17 @@ get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings)
 int
 compare_measurements (const void *a, const void *b)
 {
-  float diff = ((s_ADC_Measurement*) a)->adc_value - ((s_ADC_Measurement*) b)->adc_value;
+  float diff = ((s_ADC_Measurement*) a)->adc_value
+      - ((s_ADC_Measurement*) b)->adc_value;
   return (diff > 0) - (diff < 0); // Returns -1, 0, or 1
 }
 
 static float __attribute__((deprecated))
-calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float alpha,
-		   uint32_t timestamp_ms)
+calculate_average (s_ADC_Measurement *data, size_t N, e_average method,
+		   float alpha, uint32_t timestamp_ms)
 {
-  if (N == 0) return 0.0f;
+  if (N == 0)
+    return 0.0f;
   float sum = 0.0f;
   float result = 0.0f;
   float weight_sum = 0.0f;
@@ -72,7 +76,8 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float al
       qsort (data, N, sizeof(s_ADC_Measurement), compare_measurements);
       result =
 	  (N % 2 == 0) ?
-	      (data[N / 2 - 1].adc_value + data[N / 2].adc_value) / 2.0 : data[N / 2].adc_value;
+	      (data[N / 2 - 1].adc_value + data[N / 2].adc_value) / 2.0 :
+	      data[N / 2].adc_value;
       break;
 
     case e_average_RMS:
@@ -144,8 +149,10 @@ next_index (size_t i, size_t i_0, size_t N, size_t buffer_size,
 }
 
 static size_t __attribute__ ((optimize("-O0")))
-get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms,
-			 e_average method, float *average_result, float alpha, float multiplicator)
+get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
+			 uint32_t max_dt_ms, e_average method,
+			 float *average_result, float alpha,
+			 float multiplicator)
 {
   if (cb->head == cb->tail)
     {
@@ -153,7 +160,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       return 0;
     }
   size_t cb_count = CircularBuffer_GetItemCount (cb);
-  size_t i_0 = ((cb->head-1)) % cb->buffer_size;
+  size_t i_0 = ((cb->head - 1)) % cb->buffer_size;
   s_ADC_Measurement *ptr0 = &cb->buffer[i_0];
   if ((cb_count == 1) || (method == e_average_NONE))
     {
@@ -169,16 +176,31 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   float sum = 0.0f;
   float weight_sum = 0.0f;
   float value;
+  size_t arima_n = 0;
+  uint32_t *arima_series_timestamp =
+      (method == e_average_ARIMA) ? malloc (sizeof(uint32_t) * N) : malloc (0);
+  uint32_t *arima_time_diffs =
+      (method == e_average_ARIMA) ? malloc (sizeof(uint32_t) * N) : malloc (0);
+  float *arima_series_value =
+      (method == e_average_ARIMA) ? malloc (sizeof(float) * N) : malloc (0);
+  float *arima_diff_values =
+      (method == e_average_ARIMA) ? malloc (sizeof(float) * N) : malloc (0);
+  float *arima_predicted =
+      (method == e_average_ARIMA) ? malloc (sizeof(float) * N) : malloc (0);
+  float *arima_smoothing =
+      (method == e_average_ARIMA) ? malloc (sizeof(float) * N) : malloc (0);
+
   s_ADC_Measurement *ptr;
   size_t i;
   size_t cnt = 0;
-      if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
+  if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
     {
       sum = NAN;
     }
   for (count = 0; count < N; ++count)
     {
-      if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
+      if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC)
+	  || (method == e_average_ARIMA))
 	{
 	  // Here is place for a moving averages
 	  i = (i_0 - N + count) % cb->buffer_size; // increment from tail
@@ -235,10 +257,18 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	  }
 	case e_average_WEIGHTED_EXPONENTIAL:
 	  {
-	    float r = fabsf(timestamp_ms - ptr->timestamp_ms);
-	    float weight = expf(-r*alpha);
-	    sum += (weight*value);
+	    float r = fabsf (timestamp_ms - ptr->timestamp_ms);
+	    float weight = expf (-r * alpha);
+	    sum += (weight * value);
 	    weight_sum += weight;
+	    break;
+	  }
+	case e_average_ARIMA:
+	  {
+	    /* Update series for ARIMA */
+	    arima_series_timestamp[arima_n] = ptr->timestamp_ms;
+	    arima_series_value[arima_n] = ptr->adc_value;
+	    ++arima_n;
 	    break;
 	  }
 	default:
@@ -249,55 +279,87 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   if (cnt == 0)
     {
       *average_result = NAN;
-      return 0;
     }
-  switch (method)
+  else
     {
-    case e_average_STANDARD:
-      {
-	*average_result = (cnt != 0) ? sum / cnt : ptr0->adc_value;
-	break;
-      }
-    case e_average_EXPONENTIAL:
-      {
-	*average_result = sum;
-	break;
-      }
-    case e_average_WEIGHTED_EXPONENTIAL:
-      {
-	*average_result = (weight_sum != 0) ? sum / weight_sum : ptr0->adc_value;
-	break;
-      }
-    case e_average_RMS:
-      {
-	*average_result = sqrt (sum / cnt);
-	break;
-      }
-    case e_average_HARMONIC:
-      {
-	*average_result = (sum != 0) ? cnt / sum : 0.0f;
-	break;
-      }
-    case e_average_GEOMETRIC:
-      {
-	*average_result = pow (sum, 1.0 / cnt);
-	break;
-      }
-    default:
-      {
-	*average_result = ptr0->adc_value;
-	break;
-      }
+      switch (method)
+	{
+	case e_average_STANDARD:
+	  {
+	    *average_result = (cnt != 0) ? sum / cnt : ptr0->adc_value;
+	    break;
+	  }
+	case e_average_EXPONENTIAL:
+	  {
+	    *average_result = sum;
+	    break;
+	  }
+	case e_average_WEIGHTED_EXPONENTIAL:
+	  {
+	    *average_result =
+		(weight_sum != 0) ? sum / weight_sum : ptr0->adc_value;
+	    break;
+	  }
+	case e_average_RMS:
+	  {
+	    *average_result = sqrt (sum / cnt);
+	    break;
+	  }
+	case e_average_HARMONIC:
+	  {
+	    *average_result = (sum != 0) ? cnt / sum : 0.0f;
+	    break;
+	  }
+	case e_average_GEOMETRIC:
+	  {
+	    *average_result = pow (sum, 1.0 / cnt);
+	    break;
+	  }
+	case e_average_ARIMA:
+	  {
+	    // ARIMA(1,1,1) setup: AR(1) and MA(1) coefficients
+	    float ar_coeffs[] =
+	      { 0.1 };  // AR(1)
+	    float ma_coeffs[] =
+	      { -0.5 };  // MA(1)
+	    int d = 1;
+	    int p = sizeof(ar_coeffs) / sizeof(ar_coeffs[0]);
+	    int q = sizeof(ma_coeffs) / sizeof(ma_coeffs[0]);
+	    arima_differencing (arima_series_timestamp, arima_series_value,
+				arima_n, d, arima_diff_values,
+				arima_time_diffs);
+	    arima_apply_ARMA (arima_diff_values, arima_n, arima_time_diffs,
+			      ar_coeffs, p, ma_coeffs, q, alpha,
+			      arima_predicted); // predicting
+	    arima_inverse_differencing (arima_predicted, arima_series_value,
+					arima_n, d, arima_smoothing); // smoothing
+	    *average_result = arima_series_value[arima_n - 1]
+		+ arima_smoothing[arima_n - 1]; // add current value to smoothing or predicting
+	    break;
+	  }
+	default:
+	  {
+	    *average_result = ptr0->adc_value;
+	    break;
+	  }
+	}
     }
   *average_result = (*average_result) * multiplicator;
+
+  free (arima_diff_values);
+  free (arima_predicted);
+  free (arima_series_timestamp);
+  free (arima_series_value);
+  free (arima_time_diffs);
+  free (arima_smoothing);
   return cnt;
 }
 
 inline size_t __attribute__ ((always_inline, optimize("-O3")))
 get_average_atSettings (s_channelSettings *a, float *here, uint32_t timestamp)
 {
-  return get_average_from_buffer (a->buffer_ADC, a->max_N, timestamp, a->max_dt_ms,
-				  a->averaging_method, here, a->alpha, a->multiplicator);
+  return get_average_from_buffer (a->buffer_ADC, a->max_N, timestamp,
+				  a->max_dt_ms, a->averaging_method, here,
+				  a->alpha, a->multiplicator);
 }
-
 
