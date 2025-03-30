@@ -67,6 +67,11 @@ typedef struct __attribute__((packed))
   uint32_t timestamp;
   uint32_t DLC;
   uint8_t Data[8];
+  /* [0] -> function code,
+   * ([1] & 0xF0) >> 4 -> total msgs, ([1] & 0x0F) -> msg index
+   * [2] -> channel mask -> 0x53 = channel number 0,1,4 and 6
+   * [3:] -> data
+   */
 } s_can_msg_recieved;
 
 extern volatile int8_t canRxFlag;
@@ -76,6 +81,8 @@ extern CANCircularBuffer_t canTxBuffer;
 GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator);
 
 int8_t CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg);
+
+uint8_t get_byte_of_message_number(uint8_t msg_index, uint8_t msg_index_max);
 
 HAL_StatusTypeDef configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id);
 void modify_aurt_as_test_led (void);

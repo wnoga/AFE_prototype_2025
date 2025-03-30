@@ -6,6 +6,7 @@
  */
 
 #include "can_functions.h"
+#include "AFE_functions.h"
 #include "slcan/slcan.h"
 #include <stm32f0xx_hal_can.h>
 #include <stm32f0xx_hal_gpio.h>
@@ -365,6 +366,47 @@ can_machine (void)
 	break;
       }
     }
+}
+
+inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
+get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
+{
+  return
+      ((msg_index > 15) | (total_msg_count > 15)) ?
+	  0 : (0xF0 & (total_msg_count << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
+}
+
+void
+CANCircularBuffer_enqueueMessage_data (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
+				       uint8_t msg_index, uint8_t total_msg_count, uint8_t channel,
+				       void *value, uint8_t size)
+{
+  tmp->data[1] = get_byte_of_message_number (msg_index, total_msg_count);
+  tmp->data[2] = 1 << channel; // create mask of the channel
+  tmp->dlc = 2 + 1 + size;
+  memcpy (&tmp->data[3], value, size);
+  CANCircularBuffer_enqueueMessage (cb, tmp);
+}
+
+void
+CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
+					     uint8_t msg_index, uint8_t total_msg_count,
+					     uint8_t channel, void *value)
+{
+  CANCircularBuffer_enqueueMessage_data (cb, tmp, msg_index, total_msg_count, channel, value,
+					 sizeof(float));
+}
+
+void
+CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
+					       uint8_t msg_index, uint8_t total_msg_count,
+					       uint32_t timestamp_ms)
+{
+  tmp->data[1] = get_byte_of_message_number (msg_index, total_msg_count);
+  tmp->data[2] = 0;
+  tmp->dlc = 2 + 1 + sizeof(uint32_t);
+  memcpy (&tmp->data[3], &timestamp_ms, sizeof(uint32_t));
+  CANCircularBuffer_enqueueMessage (cb, tmp);
 }
 
 void __attribute__ ((optimize("-O3")))

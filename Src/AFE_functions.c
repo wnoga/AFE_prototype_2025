@@ -363,3 +363,16 @@ get_average_atSettings (s_channelSettings *a, float *here, uint32_t timestamp)
 				  a->alpha, a->multiplicator);
 }
 
+inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
+get_number_of_channels (uint8_t channels_mask)
+{
+  uint8_t number_of_channels = 0;
+  for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
+    {
+      if (0x01 & (channels_mask >> i0))
+	{
+	  ++number_of_channels;
+	}
+    }
+  return number_of_channels;
+}

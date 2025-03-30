@@ -13,8 +13,8 @@
 #include <math.h>
 
 extern uint16_t adc_dma_buffer[];
-uint16_t adc_dma_buffer[ADC_NUMBER_OF_CHANNELS];
-s_ADC_Measurement adc_measurement_raw[ADC_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
+uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
+s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
 
 //PA0     ------> ADC_IN0
 //PA1     ------> ADC_IN1
@@ -37,11 +37,11 @@ typedef enum
   e_adc_channel_TEMP_LOCAL
 } e_adc_channel;
 
-s_BufferADC bufferADC[ADC_NUMBER_OF_CHANNELS];
+s_BufferADC bufferADC[AFE_NUMBER_OF_CHANNELS];
 
-s_channelSettings channelSettings[ADC_NUMBER_OF_CHANNELS];
+s_channelSettings channelSettings[AFE_NUMBER_OF_CHANNELS];
 
-s_regulatorSettings regulatorSettings[NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
+s_regulatorSettings regulatorSettings[AFE_NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
 
 typedef enum
 {
@@ -55,12 +55,41 @@ volatile e_machine_main machine_main_status = e_machine_main_init;
 uint32_t periodic_send_info_period_ms = 1500;
 uint32_t periodic_send_info_start_ms = 0;
 
-int8_t machnie_flag_averaging_enabled[ADC_NUMBER_OF_CHANNELS];
+int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
 int8_t machine_temperatureLoop_enabled[2];
 
-void update_buffer_by_averagingSettings(s_channelSettings *averagingSettings)
+void update_buffer_by_channelSettings(s_channelSettings *averagingSettings)
 {
   averagingSettings->buffer_ADC->tail = averagingSettings->buffer_ADC->head = 0;
+}
+
+/***
+ * tmp->data[0] and tmp->data[1] should be set before this function
+ */
+static void
+CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (CANCircularBuffer_t *cb,
+								   const s_can_msg_recieved *msg,
+								   s_channelSettings *chs0,
+								   CAN_Message_t *tmp,
+								   const size_t offset,
+								   const uint8_t size)
+{
+  uint8_t channels = msg->Data[2];
+  tmp->data[2] = channels;
+  memcpy (&tmp->data[3], &msg->Data[3], size);
+  tmp->dlc = 2 + 1 + size;
+  for (uint8_t channel = 0; channel < AFE_NUMBER_OF_SUBDEVICES; ++channel)
+    {
+      if (0x01 & (channels >> channel))
+	{
+	  memcpy (
+	      (void*) ((size_t) &chs0[channel] + (size_t) (channel * sizeof(s_channelSettings))
+		  + offset),
+	      &msg->Data[3], size);
+	  update_buffer_by_channelSettings (&chs0[channel]);
+	}
+    }
+  CANCircularBuffer_enqueueMessage (cb, tmp);
 }
 
 static void enqueueSensorDataSIandTimestamp(CANCircularBuffer_t *cb, uint8_t command, uint8_t channel,float adc_value_real, uint32_t timestamp)
@@ -119,16 +148,16 @@ send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, CANCircu
   CAN_Message_t tmp;
   tmp.id = msg_id;
   tmp.timestamp = HAL_GetTick (); // for timeout
-  get_average_atSettings (ch, &adc_value_real,tmp.timestamp);
+  get_average_atSettings (ch, &adc_value_real, tmp.timestamp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (0, 2);
-  tmp.data[2] = ch->channel_nr;
+  tmp.data[2] = 1 << ch->channel_nr;
   tmp.dlc = 2 + 1 + sizeof(float);
   memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
   CANCircularBuffer_enqueueMessage (cb, &tmp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (1, 2);
-  tmp.data[2] = ch->channel_nr;
+  tmp.data[2] = 1 << ch->channel_nr;
   tmp.dlc = 2 + 1 + sizeof(uint32_t);
   memcpy (&tmp.data[3], &timestamp, sizeof(float));
   CANCircularBuffer_enqueueMessage (cb, &tmp);
@@ -387,7 +416,7 @@ void __attribute__ ((cold, optimize("-Os")))
 machine_main_init_0 (void)
 {
   machine_main_status = e_machine_main_init;
-  for (uint8_t i0 = 0; i0 < ADC_NUMBER_OF_CHANNELS; ++i0)
+  for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
     {
       channelSettings[i0].channel_nr = i0;
       channelSettings[i0].averaging_method = e_average_NONE;
@@ -428,14 +457,6 @@ machine_main_init_0 (void)
   /* Append ADC channel to regulator settings */
   regulatorSettings[0].temperature_channelSettings_ptr = &channelSettings[e_ADC_CHANNEL_TEMP_LOCAL];
   regulatorSettings[1].temperature_channelSettings_ptr = &channelSettings[e_ADC_CHANNEL_TEMP_EXT];
-}
-
-inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
-get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
-{
-  return
-      ((msg_index > 15) | (total_msg_count > 15)) ?
-	  0 : (0xF0 & (total_msg_count << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
 }
 
 static uint32_t value0;
@@ -490,73 +511,65 @@ can_execute (const s_can_msg_recieved msg)
 
       /**** 0x30 ****/
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float value[Data[3:7]]  */
-    case AFECommand_getSensorDataSi_last:
+    case AFECommand_getSensorDataSi_last_byMask:
       {
-	uint8_t channel = msg.Data[2];
+	uint8_t channels = msg.Data[2];
 	s_ADC_Measurement adc_val;
-	get_n_latest_from_buffer(channelSettings[channel].buffer_ADC, 1, &adc_val);
-	float adc_value_real = channelSettings[channel].a * adc_val.adc_value + channelSettings[channel].b;
-	tmp.data[2] = channel;
-	tmp.dlc = 2 + 1 + sizeof(float);
-	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	float adc_value_real;
+	uint8_t total_msg_count = get_number_of_channels (channels) + 1; // Channels + timestamp
+	uint8_t msg_index = 0;
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
+	  {
+	    if (0x01 & (channels >> channel)) // loop over channel mask
+	      {
+		get_n_latest_from_buffer (channelSettings[channel].buffer_ADC, 1, &adc_val);
+		adc_value_real = channelSettings[channel].a * adc_val.adc_value
+		    + channelSettings[channel].b;
+		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
+							     total_msg_count, channel,
+							     &adc_value_real);
+		++msg_index;
+	      }
+	  }
+	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
+						       total_msg_count, tmp.timestamp);
 	break;
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]  */
-    case AFECommand_getSensorDataSi_average:
+    case AFECommand_getSensorDataSi_average_byMask:
       {
-	uint8_t channel = msg.Data[2];
+	uint8_t channels = msg.Data[2];
 	float adc_value_real;
-	get_average_atSettings (&channelSettings[channel], &adc_value_real,tmp.timestamp);
-	tmp.data[2] = channel;
-	tmp.dlc = 2 + 1 + sizeof(float);
-	memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
-	break;
-      }
-      /* Send SI data [Data[0]] from all channels as float average value[Data[3:7]]  */
-    case AFECommand_getSensorDataSi_all_average:
-      {
-	for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
+	uint8_t total_msg_count = get_number_of_channels (channels) + 1;
+	uint8_t msg_index = 0;
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
-	    float adc_value_real;
-	    get_average_atSettings (&channelSettings[channel], &adc_value_real,tmp.timestamp);
-	    tmp.data[0] = 0x32;
-	    tmp.data[1] = get_byte_of_message_number (channel, ADC_NUMBER_OF_CHANNELS);
-	    tmp.data[2] = channel;
-	    tmp.dlc = 2 + 1 + sizeof(float);
-	    memcpy (&tmp.data[3], &adc_value_real, sizeof(float));
-	    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	    if (0x01 & (channels >> channel)) // loop over channel mask
+	      {
+		get_average_atSettings (&channelSettings[channel], &adc_value_real, tmp.timestamp);
+		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
+							     total_msg_count, channel,
+							     adc_value_real);
+		++msg_index;
+	      }
 	  }
-	break;
-      }
-    case AFECommand_setSensorDataSi_all_periodic_average:
-      {
-	tmp.data[1] = get_byte_of_message_number (0, 1);
-	tmp.data[2] = 0x00;
-	uint32_t period_ms;
-	memcpy (&period_ms, &msg.Data[2], sizeof(uint32_t));
-	for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
-	  {
-	    channelSettings[channel].period_ms = period_ms;
-	    tmp.data[2] |= 1 << channel; // Set flag if this channel is set
-	  }
-	tmp.dlc = 2 + 1;
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
+						       total_msg_count, tmp.timestamp);
 	break;
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]
        * and timestamp on next message */
-    case AFECommand_getSensorDataSiAndTimestamp_average:
+    case AFECommand_getSensorDataSiAndTimestamp_average_byMask:
       {
-	uint8_t channel = msg.Data[2];
-	if (channel >= ADC_NUMBER_OF_CHANNELS)
+	uint8_t channels = msg.Data[2];
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_SUBDEVICES; ++channel)
 	  {
-	    // TODO Error?
-	    break;
+	    if (0x01 & (channels >> channel))
+	      {
+		send_SensorDataSiAndTimestamp_average (tmp.id, command, &canTxBuffer,
+						       &channelSettings[channel], HAL_GetTick ());
+	      }
 	  }
-	send_SensorDataSiAndTimestamp_average (tmp.id, command, &canTxBuffer,
-					       &channelSettings[channel], HAL_GetTick ());
 	break;
       }
     case AFECommand_getSensorDataSi_all_periodic_average:
@@ -590,13 +603,23 @@ can_execute (const s_can_msg_recieved msg)
 #warning "Test SPI!" // TODO Test SPI
 	break;
       }
-    case AFECommand_setAD8402Value_byte:
+    case AFECommand_setAD8402Value_byte_byMask:
       {
-	uint8_t channel = msg.Data[2];
+	uint8_t channels = msg.Data[2];
 	uint8_t value = msg.Data[3];
-	tmp.data[2] = channel;
-	tmp.data[3] = value;
-	tmp.data[4] = AD8402_Write(&hspi1, channel, value, TIMEOUT_SPI1_MS);
+	uint8_t msg_index = 0;
+	uint8_t total_msg_count = get_number_of_channels (channels);
+	for (uint8_t channel = 0; channel < NUMBER_OF_AD8402_CHANNELS; ++channel)
+	  {
+	    if (0x01 & (channels >> channel))
+	      {
+		tmp.data[4] = AD8402_Write (&hspi1, channel, value, TIMEOUT_SPI1_MS);
+		CANCircularBuffer_enqueueMessage_data (&canTxBuffer, &tmp, msg_index,
+						       total_msg_count, channel, &value,
+						       sizeof(uint8_t));
+		++msg_index;
+	      }
+	  }
 	break;
       }
     case AFECommand_writeGPIO:
@@ -615,89 +638,47 @@ can_execute (const s_can_msg_recieved msg)
 
       /* 0xC0 */
       /* Temperature loop runtime */
-    case AFECommand_setTemperatureLoopForChannelState_bySubdevice: // start or stop [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setTemperatureLoopForChannelState_byMask_asMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
       {
-	uint8_t channel = msg.Data[2];
-	uint8_t status =  msg.Data[3];
-	switch (channel)
-	  {
-	  case AFECommandSubdevice_master:
-	    {
-	      regulatorSettings[0].enabled = status;
-	      break;
-	    }
-	  case AFECommandSubdevice_slave:
-	    {
-	      regulatorSettings[1].enabled = status;
-	      break;
-	    }
-	  case AFECommandSubdevice_both:
-	    {
-	      regulatorSettings[0].enabled = status;
-	      regulatorSettings[1].enabled = status;
-	      break;
-	    }
-	  default:
-	    break;
-	  }
-	tmp.data[2] = channel;
+	uint8_t channels = msg.Data[2];
+	uint8_t status = msg.Data[3];
+	tmp.data[2] = channels;
 	tmp.data[3] = status;
-	tmp.dlc = 2 + 1 + 1;
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
-	break;
-      }
-    case AFECommand_setTemperatureLoopForChannelState_byMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
-      {
-	uint8_t channel = msg.Data[2];
-	uint8_t status =  msg.Data[3];
-//	regulatorSettings[channel].enabled = msg.Data[3];
-	tmp.data[2] = AFECommandSubdevice_both;
 	tmp.dlc = 2 + 2;
-	tmp.data[3] = 0x00;
-	for(uint8_t i0=0;i0<NUMBER_OF_SUBDEVICES;++i0)
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_SUBDEVICES; ++channel)
 	  {
-	    if(0x01 & (channel >> i0))
+	    if (0x01 & (channels >> channel))
 	      {
-		regulatorSettings[i0].enabled = 0x01 & (status >> i0);
+		regulatorSettings[channel].enabled = 0x01 & (status >> channel);
 	      }
-	    tmp.data[3] |= regulatorSettings[i0].enabled << i0;
 	  }
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setDACValueRaw_bySubdevice: // set [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setDACValueRaw_bySubdeviceMask: // set [Data[3] temperature loop for channel [Data[2]]
       {
-	uint8_t channel = msg.Data[2];
-	regulatorSettings[channel].enabled = msg.Data[3];
+	uint8_t channels = msg.Data[2];
 	uint16_t value = 0;
 	memcpy (&value, &msg.Data[3], sizeof(uint16_t));
-	switch (channel)
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_SUBDEVICES; ++channel)
 	  {
-	  case AFECommandSubdevice_master:
-	    {
-	      machine_DAC_set (DAC_CHANNEL_1, value);
-	      break;
-	    }
-	  case AFECommandSubdevice_slave:
-	    {
-	      machine_DAC_set (DAC_CHANNEL_2, value);
-	      break;
-	    }
-	  case AFECommandSubdevice_both:
-	    {
-	      machine_DAC_set (0x11, value);
-	      break;
-	    }
-	  default:
-	    break;
+	    if (0x01 & (channels >> channel))
+	      {
+		if (channel == 0)
+		  {
+		    machine_DAC_set (DAC_CHANNEL_1, value);
+		  }
+		else
+		  {
+		    machine_DAC_set (DAC_CHANNEL_2, value);
+		  }
+	      }
 	  }
-	tmp.data[2] = channel;
-	tmp.data[3] = value;
-	tmp.dlc = 2 + 1 + 1;
+	memcpy (&tmp.data[3], &value, sizeof(uint16_t));
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setDACValueSi_bySubdevice: // set [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setDACValueSi_bySubdeviceMask: // set [Data[3] temperature loop for channel [Data[2]]
       {
 	uint8_t channel = msg.Data[2];
 	regulatorSettings[channel].enabled = msg.Data[3];
@@ -743,30 +724,20 @@ can_execute (const s_can_msg_recieved msg)
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setDAC_bySubdevice: // Start or stop DAC
+    case AFECommand_setDAC_bySubdeviceMask_asMask: // Start or stop DAC
       {
-	uint8_t channel = msg.Data[2];
-	uint8_t status =  msg.Data[3];
-	tmp.data[2] = channel;
-	switch (channel)
+	uint8_t channels = msg.Data[2];
+	uint8_t status = msg.Data[3];
+	tmp.data[2] = channels; // Copy mask
+	tmp.data[3] = 0x00; // Clear status
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_SUBDEVICES; ++channel)
 	  {
-	  case AFECommandSubdevice_master:
-	    {
-	      tmp.data[3] = machine_DAC_switch (DAC_CHANNEL_1, status);
-	      break;
-	    }
-	  case AFECommandSubdevice_slave:
-	    {
-	      tmp.data[3] = machine_DAC_switch (DAC_CHANNEL_2, status);
-	      break;
-	    }
-	  case AFECommandSubdevice_both:
-	    {
-	      tmp.data[3] = machine_DAC_switch (0x11, status);
-	      break;
-	    }
-	  default:
-	    break;
+	    if (0x01 & (channels >> channel))
+	      {
+		tmp.data[3] |= (
+		    machine_DAC_switch ((channel == 0) ? DAC_CHANNEL_1 : DAC_CHANNEL_2, status)
+			== HAL_OK ? 1 : 0) << channel;
+	      }
 	  }
 	tmp.dlc = 2 + 2;
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
@@ -780,98 +751,65 @@ can_execute (const s_can_msg_recieved msg)
 
       /*********** 0xD0 ************/
       /* Set setting [Data[0]] for adc channel [Data[2]] by uint32_t value[Data[3:7]]  */
-    case AFECommand_setAveragingMode: // set averagingSettings.averaging_method
+    case AFECommand_setAveragingMode_byMask: // set averagingSettings.averaging_method
       {
-	uint8_t channel = msg.Data[2];
-	channelSettings[channel].averaging_method = (e_average) msg.Data[3];
-	update_buffer_by_averagingSettings (&channelSettings[channel]);
-	tmp.dlc = 2 + 1 + 1;
-	tmp.data[2] = channel;
-	tmp.data[3] = (uint8_t) channelSettings[channel].averaging_method;
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp,
+	    (size_t) &((s_channelSettings*) 0)->averaging_method, sizeof(e_average));
 	break;
       }
-    case AFECommand_setAveragingAlpha: // set averagingSettings.alpha
+    case AFECommand_setAveragingAlpha_byMask: // set averagingSettings.alpha
       {
-	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].alpha, &msg.Data[3], sizeof(float));
-	update_buffer_by_averagingSettings(&channelSettings[channel]);
-	tmp.dlc = 2 + 1 + 4;
-	tmp.data[2] = channel;
-	memcpy (&tmp.data[3], &channelSettings[channel].alpha, sizeof(float));
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp, (size_t) &((s_channelSettings*) 0)->alpha,
+	    sizeof(float));
 	break;
       }
-    case AFECommand_setAveragingBufferSize: // set averagingSettings.buffer_size
+    case AFECommand_setAveragingBufferSize_byMask: // set averagingSettings.buffer_size
       {
-	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].buffer_ADC->buffer_size, &msg.Data[3], sizeof(uint32_t));
-	update_buffer_by_averagingSettings(&channelSettings[channel]);
-	tmp.dlc = 2 + 1 + 4;
-	tmp.data[2] = channel;
-	memcpy (&tmp.data[3], &channelSettings[channel].buffer_ADC->buffer_size, 4);
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp,
+	    (size_t) &((s_channelSettings*) 0)->buffer_ADC->buffer_size, sizeof(uint32_t));
 	break;
       }
-    case AFECommand_setChannel_dt_ms:
+    case AFECommand_setChannel_dt_ms_byMask:
       {
-	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].buffer_ADC->dt_ms, &msg.Data[3], sizeof(uint32_t));
-	update_buffer_by_averagingSettings(&channelSettings[channel]);
-	tmp.dlc = 2 + 1 + 4;
-	tmp.data[2] = channel;
-	memcpy (&tmp.data[3], &channelSettings[channel].buffer_ADC->dt_ms, 4);
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp,
+	    (size_t) &((s_channelSettings*) 0)->buffer_ADC->dt_ms, sizeof(uint32_t));
 	break;
       }
-    case AFECommand_setAveraging_max_dt_ms: // set averagingSettings.max_dt_ms
+    case AFECommand_setAveraging_max_dt_ms_byMask: // set averagingSettings.max_dt_ms
       {
-	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].max_dt_ms, &msg.Data[3], sizeof(uint32_t));
-	update_buffer_by_averagingSettings(&channelSettings[channel]);
-	tmp.dlc = 2 + 1 + 4;
-	tmp.data[2] = channel;
-	memcpy (&tmp.data[3], &channelSettings[channel].max_dt_ms, 4);
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp,
+	    (size_t) &((s_channelSettings*) 0)->max_dt_ms, sizeof(uint32_t));
 	break;
       }
-    case AFECommand_setChannel_multiplicator: // set averagingSettings.multiplicator
+    case AFECommand_setChannel_multiplicator_byMask: // set averagingSettings.multiplicator
       {
-	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].multiplicator, &msg.Data[3], sizeof(uint32_t));
-	update_buffer_by_averagingSettings(&channelSettings[channel]);
-	tmp.dlc = 2 + 1 + 4;
-	tmp.data[2] = channel;
-	memcpy (&tmp.data[3], &channelSettings[channel].multiplicator, 4);
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp,
+	    (size_t) &((s_channelSettings*) 0)->multiplicator, sizeof(float));
 	break;
       }
     case AFECommand_setAveragingSubdevice: // set averagingSettings.subdevice
       {
-	update_buffer_by_averagingSettings(&channelSettings[msg.Data[2]]);
-//	averagingSettings[msg.Data[2]].subdevice = (e_subdevice)msg.Data[3];
+	update_buffer_by_channelSettings (&channelSettings[msg.Data[2]]);
 	break;
       }
-    case AFECommand_setChannel_a:
+    case AFECommand_setChannel_a_byMask:
       {
-	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].a, &msg.Data[3], sizeof(float));
-	tmp.dlc = 7;
-	tmp.data[1] = msg.Data[1];
-	tmp.data[2] = msg.Data[2];
-	memcpy(&tmp.data[3],&channelSettings[channel].a,sizeof(float));
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp, (size_t) &((s_channelSettings*) 0)->a,
+	    sizeof(float));
 	break;
       }
-    case AFECommand_setChannel_b:
+    case AFECommand_setChannel_b_byMask:
       {
-	uint8_t channel = msg.Data[2];
-	memcpy (&channelSettings[channel].b, &msg.Data[3], sizeof(float));
-	tmp.dlc = 7;
-	tmp.data[1] = msg.Data[1];
-	tmp.data[2] = msg.Data[2];
-	memcpy(&tmp.data[3],&channelSettings[channel].b,sizeof(float));
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp, (size_t) &((s_channelSettings*) 0)->b,
+	    sizeof(float));
 	break;
       }
     default:
@@ -895,7 +833,7 @@ void __attribute__ ((optimize("-O3")))
 machine_calculate_averageValues (float *here)
 {
   uint32_t timestamp_now = HAL_GetTick ();
-  for (uint8_t i0 = 0; i0 < ADC_NUMBER_OF_CHANNELS; ++i0)
+  for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
     {
       if (machnie_flag_averaging_enabled[i0])
 	{
@@ -1027,7 +965,7 @@ machine_control (void)
 static void __attribute__ ((optimize("-O3")))
 machine_periodic_report (void)
 {
-  for (uint8_t channel = 0; channel < ADC_NUMBER_OF_CHANNELS; ++channel)
+  for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
     {
       s_channelSettings *ptr = &channelSettings[channel];
       uint32_t timestamp = HAL_GetTick ();
@@ -1099,7 +1037,7 @@ HAL_ADC_ConvCpltCallback (ADC_HandleTypeDef *hadc)
     /* Store timestamp */
     _ADC_Measurement_HAL_ADC_ConvCpltCallback.timestamp_ms = HAL_GetTick();
 
-    for (uint8_t i = 0; i < ADC_NUMBER_OF_CHANNELS; ++i)
+    for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
     {
         /* Ensure the latest ADC value is read from memory (not a cached value) */
 //        __DMB();  // Data Memory Barrier (ensures correct ordering of memory operations)

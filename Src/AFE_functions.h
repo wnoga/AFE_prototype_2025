@@ -9,8 +9,8 @@
 #define AFE_FUNCTIONS_H_
 
 #define ADC_MEASUREMENT_RAW_SIZE_MAX 256
-#define ADC_NUMBER_OF_CHANNELS 8
-#define NUMBER_OF_SUBDEVICES 2
+#define AFE_NUMBER_OF_CHANNELS 8
+#define AFE_NUMBER_OF_SUBDEVICES 2
 #define ADC_MEASUREMENT_RAW_DEFAULT_DT_MS 100
 
 #define AFE_DAC_MAX 0xFFF
@@ -22,6 +22,8 @@
 #define AFE_REGULATOR_DEFAULT_U_offset 0.0
 #define AFE_REGULATOR_DEFAULT_dT 1.0
 
+#define NUMBER_OF_AD8402_CHANNELS 2
+
 #include "BufferADC.h"
 #include <stdio.h>
 
@@ -31,13 +33,10 @@ typedef enum
   AFECommand_getVersion = 0x01,
   AFECommand_resetAll = 0x03,
 
-  AFECommand_getSensorDataSi_last = 0x30,
-  AFECommand_getSensorDataSi_average = 0x31,
-  AFECommand_getSensorDataSi_all_last = 0x32,
-  AFECommand_getSensorDataSi_all_average = 0x33,
-  AFECommand_setSensorDataSi_all_periodic_average = 0x34,
+  AFECommand_getSensorDataSi_last_byMask = 0x30,
+  AFECommand_getSensorDataSi_average_byMask = 0x31,
 
-  AFECommand_getSensorDataSiAndTimestamp_average = 0x3B,
+  AFECommand_getSensorDataSiAndTimestamp_average_byMask = 0x3B,
   AFECommand_getSensorDataSi_all_periodic_average = 0x3F,
 
   AFECommand_setSensorDataSi_periodic_last = 0x40,
@@ -46,26 +45,25 @@ typedef enum
   AFECommand_setSensorDataSiAndTimestamp_periodic_average = 0x43,
 
   AFECommand_transmitSPIData = 0xA0,
-  AFECommand_setAD8402Value_byte = 0xA1,
+  AFECommand_setAD8402Value_byte_byMask = 0xA1,
   AFECommand_writeGPIO = 0xA2,
 
-  AFECommand_setTemperatureLoopForChannelState_bySubdevice = 0xC0,
-  AFECommand_setTemperatureLoopForChannelState_byMask = 0xC1,
-  AFECommand_setDACValueRaw_bySubdevice = 0xC2,
-  AFECommand_setDACValueSi_bySubdevice = 0xC3,
+  AFECommand_setTemperatureLoopForChannelState_byMask_asMask = 0xC1,
+  AFECommand_setDACValueRaw_bySubdeviceMask = 0xC2,
+  AFECommand_setDACValueSi_bySubdeviceMask = 0xC3,
   AFECommand_stopTemperatureLoopForAllChannels = 0xC4,
-  AFECommand_setDAC_bySubdevice = 0xC5,
+  AFECommand_setDAC_bySubdeviceMask_asMask = 0xC5,
   AFECommand_setDACRampOneBytePerMillisecond_ms = 0xC6,
 
-  AFECommand_setAveragingMode = 0xD0,
-  AFECommand_setAveragingAlpha = 0xD1,
-  AFECommand_setAveragingBufferSize = 0xD2,
-  AFECommand_setChannel_dt_ms = 0xD3,
-  AFECommand_setAveraging_max_dt_ms = 0xD4,
-  AFECommand_setChannel_multiplicator = 0xD5,
+  AFECommand_setAveragingMode_byMask = 0xD0,
+  AFECommand_setAveragingAlpha_byMask = 0xD1,
+  AFECommand_setAveragingBufferSize_byMask = 0xD2,
+  AFECommand_setChannel_dt_ms_byMask = 0xD3,
+  AFECommand_setAveraging_max_dt_ms_byMask = 0xD4,
+  AFECommand_setChannel_multiplicator_byMask = 0xD5,
   AFECommand_setAveragingSubdevice = 0xD6,
-  AFECommand_setChannel_a = 0xD7,
-  AFECommand_setChannel_b = 0xD8,
+  AFECommand_setChannel_a_byMask = 0xD7,
+  AFECommand_setChannel_b_byMask = 0xD8,
 
   AFECommand_debug_machine_control = 0xF1
 } AFECommand;
@@ -171,5 +169,6 @@ typedef struct __attribute__((packed))
 
 size_t get_average_atSettings (s_channelSettings *a, float *here, uint32_t timestamp);
 float get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings);
+uint8_t get_number_of_channels (uint8_t channels_mask);
 
 #endif /* AFE_FUNCTIONS_H_ */
