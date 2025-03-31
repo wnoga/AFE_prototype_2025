@@ -464,16 +464,16 @@ void __attribute__ ((optimize("-O3")))
 can_execute (const s_can_msg_recieved msg)
 {
   CAN_Message_t tmp;
-  uint8_t command = (uint8_t)msg.Data[0];
+  uint8_t command = (uint8_t) msg.Data[0];
   uint32_t msg_id = CAN_ID_IN_MSG;
   tmp.timestamp = HAL_GetTick ();
   tmp.id = msg_id;
   tmp.data[0] = command; // Standard reply [function]
-  tmp.data[1] = get_byte_of_message_number(0, 1); // Standard number of messages 1/1
-		      // (0xF0 >> 4) = total number of messages in queue
-		      // (0x0F) = message number (in the queue)
+  tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+  // (0xF0 >> 4) = total number of messages in queue
+  // (0x0F) = message number (in the queue)
   tmp.dlc = 8;
-  switch ((AFECommand)command)
+  switch ((AFECommand) command)
     {
     case AFECommand_getSerialNumber: // getSerialNumber
       {
@@ -481,7 +481,7 @@ can_execute (const s_can_msg_recieved msg)
 	tmp.dlc = 2 + 4;
 	for (uint8_t i0 = 0; i0 < 3; ++i0)
 	  {
-	    tmp.data[1] = get_byte_of_message_number(i0, 3);
+	    tmp.data[1] = get_byte_of_message_number (i0, 3);
 	    // Copy the UID data, byte-by-byte
 	    memcpy (&tmp.data[2], (uint8_t*) &UID[i0], sizeof(uint32_t));
 	    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
@@ -505,7 +505,7 @@ can_execute (const s_can_msg_recieved msg)
       }
     case AFECommand_resetAll: // resetAll
       {
-	NVIC_SystemReset();
+	NVIC_SystemReset ();
 	break;
       }
 
@@ -607,27 +607,27 @@ can_execute (const s_can_msg_recieved msg)
       {
 	uint8_t channels = msg.Data[2];
 	uint8_t value = msg.Data[3];
-	uint8_t msg_index = 0;
-	uint8_t total_msg_count = get_number_of_channels (channels);
+	tmp.data[1] = get_byte_of_message_number(0, 1);
+	tmp.data[2] = channels;
+	tmp.data[3] = value;
+	tmp.data[4] = 0x00; // masked error status
+	tmp.dlc = 5;
 	for (uint8_t channel = 0; channel < NUMBER_OF_AD8402_CHANNELS; ++channel)
 	  {
 	    if (0x01 & (channels >> channel))
 	      {
-		tmp.data[4] = AD8402_Write (&hspi1, channel, value, TIMEOUT_SPI1_MS);
-		CANCircularBuffer_enqueueMessage_data (&canTxBuffer, &tmp, msg_index,
-						       total_msg_count, channel, &value,
-						       sizeof(uint8_t));
-		++msg_index;
+		tmp.data[4] |= AD8402_Write (&hspi1, channel, value, TIMEOUT_SPI1_MS) << channel;
 	      }
 	  }
+	CANCircularBuffer_enqueueMessage(&canTxBuffer,&tmp);
 	break;
       }
     case AFECommand_writeGPIO:
       {
-	GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator(msg.Data[2]);
+	GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator (msg.Data[2]);
 	uint32_t GPIO_Pin = 1 << msg.Data[3];
 	uint8_t PinState = msg.Data[4];
-	machine_GPIO_WritePin(GPIOx, GPIO_Pin, PinState);
+	machine_GPIO_WritePin (GPIOx, GPIO_Pin, PinState);
 	tmp.data[2] = msg.Data[2];
 	tmp.data[3] = msg.Data[3];
 	tmp.data[4] = msg.Data[4];
@@ -686,7 +686,7 @@ can_execute (const s_can_msg_recieved msg)
 	memcpy (&valueSi, &msg.Data[3], sizeof(float));
 	/* FIXME Add function to convert DAC SI value to uint16_t */
 	Error_Handler();
-	uint16_t value = roundf(valueSi);
+	uint16_t value = roundf (valueSi);
 	switch (channel)
 	  {
 	  case AFECommandSubdevice_master:
@@ -761,8 +761,8 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setAveragingAlpha_byMask: // set averagingSettings.alpha
       {
 	CANCircularBuffer_enqueueMessage_and_update_channelSettings_byMsg (
-	    &canTxBuffer, &msg, &channelSettings[0], &tmp, (size_t) &((s_channelSettings*) 0)->alpha,
-	    sizeof(float));
+	    &canTxBuffer, &msg, &channelSettings[0], &tmp,
+	    (size_t) &((s_channelSettings*) 0)->alpha, sizeof(float));
 	break;
       }
     case AFECommand_setAveragingBufferSize_byMask: // set averagingSettings.buffer_size

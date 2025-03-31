@@ -95,7 +95,7 @@ add_to_buffer (s_BufferADC *cb, const s_ADC_Measurement *measurement)
     {
       if ((measurement->timestamp_ms
 	  - cb->buffer[(cb->head != 0) ? cb->head - 1 : cb->buffer_size - 1].timestamp_ms)
-	  < cb->dt_ms)
+	  < cb->dt_ms) // Check if this should be pushed to the buffer
 	{
 	  return;
 	}
