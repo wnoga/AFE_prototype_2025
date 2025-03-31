@@ -26,7 +26,7 @@ extern const size_t verArrLen;
 extern uint32_t UID[];
 
 #define CAN_MSG_LIFETIME_MS 5000
-#define CAN_BUFFER_SIZE 128
+#define CAN_BUFFER_SIZE 64
 #define CAN_MSG_RECIEVED_TIMEOUT_MS 3000
 #define CAN_MSG_BURST_DELAY_MS 100
 

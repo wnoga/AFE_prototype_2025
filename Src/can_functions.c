@@ -352,6 +352,15 @@ can_machine (void)
 	HAL_CAN_Receive_IT (&hcan, CAN_FIFO0);
 
 	StartCan ();
+	CAN_Message_t tmp;
+	  uint8_t command = AFECommand_resetAll;
+	  uint32_t msg_id = CAN_ID_IN_MSG;
+	  tmp.timestamp = HAL_GetTick ();
+	  tmp.id = msg_id;
+	  tmp.data[0] = command; // Standard reply [function]
+	  tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+	  tmp.dlc = 2;
+	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
 
 	break;
       }
@@ -391,9 +400,9 @@ CANCircularBuffer_enqueueMessage_data (CANCircularBuffer_t *cb, CAN_Message_t *t
 void
 CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
 					     uint8_t msg_index, uint8_t total_msg_count,
-					     uint8_t channel, void *value)
+					     uint8_t channel, float *value)
 {
-  CANCircularBuffer_enqueueMessage_data (cb, tmp, msg_index, total_msg_count, channel, value,
+  CANCircularBuffer_enqueueMessage_data (cb, tmp, msg_index, total_msg_count, channel, (void*)value,
 					 sizeof(float));
 }
 

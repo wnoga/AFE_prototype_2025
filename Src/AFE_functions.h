@@ -24,6 +24,8 @@
 
 #define NUMBER_OF_AD8402_CHANNELS 2
 
+#define USE_ARIMA 0
+
 #include "BufferADC.h"
 #include <stdio.h>
 
@@ -167,8 +169,9 @@ typedef struct __attribute__((packed))
 } s_regulatorSettings;
 
 
-size_t get_average_atSettings (s_channelSettings *a, float *here, uint32_t timestamp);
+float get_average_atSettings (s_channelSettings *a, uint32_t timestamp);
 float get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings);
+float faxplusb (float value, s_channelSettings *ch);
 uint8_t get_number_of_channels (uint8_t channels_mask);
 
 #endif /* AFE_FUNCTIONS_H_ */

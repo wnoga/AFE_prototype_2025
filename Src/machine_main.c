@@ -132,7 +132,7 @@ send_SensorDataSi_average (uint8_t msg_id, uint8_t command, CANCircularBuffer_t 
   CAN_Message_t tmp;
   tmp.id = msg_id;
   tmp.timestamp = HAL_GetTick (); // for timeout
-  get_average_atSettings (ch, &adc_value_real,tmp.timestamp);
+  adc_value_real = get_average_atSettings (ch,tmp.timestamp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (0, 1);
   tmp.data[2] = ch->channel_nr;
@@ -148,7 +148,7 @@ send_SensorDataSiAndTimestamp_average (uint8_t msg_id, uint8_t command, CANCircu
   CAN_Message_t tmp;
   tmp.id = msg_id;
   tmp.timestamp = HAL_GetTick (); // for timeout
-  get_average_atSettings (ch, &adc_value_real, tmp.timestamp);
+  adc_value_real = get_average_atSettings (ch, tmp.timestamp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (0, 2);
   tmp.data[2] = 1 << ch->channel_nr;
@@ -523,8 +523,7 @@ can_execute (const s_can_msg_recieved msg)
 	    if (0x01 & (channels >> channel)) // loop over channel mask
 	      {
 		get_n_latest_from_buffer (channelSettings[channel].buffer_ADC, 1, &adc_val);
-		adc_value_real = channelSettings[channel].a * adc_val.adc_value
-		    + channelSettings[channel].b;
+		adc_value_real = faxplusb(adc_val.adc_value, &channelSettings[channel]);
 		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
 							     total_msg_count, channel,
 							     &adc_value_real);
@@ -546,10 +545,10 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (0x01 & (channels >> channel)) // loop over channel mask
 	      {
-		get_average_atSettings (&channelSettings[channel], &adc_value_real, tmp.timestamp);
+		adc_value_real = get_average_atSettings (&channelSettings[channel], tmp.timestamp);
 		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
 							     total_msg_count, channel,
-							     adc_value_real);
+							     &adc_value_real);
 		++msg_index;
 	      }
 	  }
@@ -837,15 +836,9 @@ machine_calculate_averageValues (float *here)
     {
       if (machnie_flag_averaging_enabled[i0])
 	{
-	  here[i0] = get_average_atSettings(&channelSettings[i0], &here[i0],timestamp_now);
+	  here[i0] = get_average_atSettings(&channelSettings[i0],timestamp_now);
 	}
     }
-}
-
-inline float __attribute__ ((always_inline, optimize("-O3")))
-faxplusb (float value, s_channelSettings *ch)
-{
-  return ch->a * value + ch->b;
 }
 
 /***
@@ -865,17 +858,12 @@ machine_control (void)
 	}
       uint32_t timestamp_ms = HAL_GetTick ();
 
-      float average_Temperature;
-      if (get_average_atSettings (regulatorSettings_ptr->temperature_channelSettings_ptr,
-				  &average_Temperature, timestamp_ms) == 0)
+      float average_Temperature = get_average_atSettings (regulatorSettings_ptr->temperature_channelSettings_ptr, timestamp_ms);
+      if (isnan(average_Temperature))
 	{
 	  /* Skip if cannot calculate average */
 	  continue;
 	}
-
-      /* Apply a*x+b */
-      average_Temperature = faxplusb (average_Temperature,
-				      regulatorSettings_ptr->temperature_channelSettings_ptr);
 
       if (fabsf (average_Temperature - regulatorSettings_ptr->T_old) >= regulatorSettings_ptr->dT)
 	{
@@ -975,7 +963,7 @@ machine_periodic_report (void)
 	    {
 	      float adc_value_real = 0.0;
 	      ptr->period_ms_last = timestamp;
-	      get_average_atSettings (ptr, &adc_value_real, timestamp);
+	      adc_value_real = get_average_atSettings (ptr, timestamp);
 	      enqueueSensorDataSIandTimestamp (&canTxBuffer,
 					       AFECommand_getSensorDataSi_all_periodic_average,
 					       channel, adc_value_real, timestamp);

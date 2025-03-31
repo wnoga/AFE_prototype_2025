@@ -178,7 +178,7 @@ int main(void)
     MX_GPIO_Init();
     MX_DMA_Init();
     MX_CAN_Init();
-//    MX_IWDG_Init();
+    MX_IWDG_Init();
 
     MX_DAC_Init();
 
@@ -195,6 +195,7 @@ int main(void)
     while(1)
       {
 	machine_main();
+	__HAL_IWDG_RELOAD_COUNTER(&hiwdg);
       }
     NVIC_SystemReset();
 
