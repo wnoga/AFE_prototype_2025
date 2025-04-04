@@ -89,6 +89,10 @@ void modify_aurt_as_test_led (void);
 void can_machine_init_0 (void);
 void can_machine (void);
 
+void CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
+					     uint8_t msg_index, uint8_t total_msg_count,
+					     uint8_t channel, float *value);
+
 void _delay (size_t ms);
 void blink1 (void);
 

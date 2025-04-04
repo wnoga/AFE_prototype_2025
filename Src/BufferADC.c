@@ -11,6 +11,15 @@
 #include <stdarg.h>
 #include <time.h>
 
+#if defined (STM32F072xB)
+#else
+uint32_t __attribute__((weak))
+HAL_GetTick (void)
+{
+  return (uint32_t) (clock () * 1000 / CLOCKS_PER_SEC);
+}
+#endif
+
 void __attribute__ ((cold, optimize("-Os")))
 init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uint32_t dt_ms)
 {
@@ -85,7 +94,7 @@ get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N,
 size_t
 get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here)
 {
-  return get_n_latest_from_buffer_max_dt_ms (cb, N, here, 0, 0);
+  return get_n_latest_from_buffer_max_dt_ms (cb, N, here, HAL_GetTick(), UINT32_MAX);
 }
 
 inline void __attribute__ ((always_inline, optimize("-O3")))

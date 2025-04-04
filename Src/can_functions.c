@@ -71,18 +71,7 @@ GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator)
 inline static int __attribute__ ((always_inline, optimize("-O3")))
 is_this_msg_for_me (CanRxMsgTypeDef *rxCanMsg, uint8_t own_id)
 {
-  if (rxCanMsg->IDE != CAN_ID_STD)
-    {
-      return 0;
-    }
-  else if (own_id == (0xFF & (rxCanMsg->StdId >> 2)))
-    {
-      return 1;
-    }
-  else
-    {
-      return 0;
-    }
+  return (rxCanMsg->IDE == CAN_ID_STD) && (own_id == ((rxCanMsg->StdId >> 2) & 0xFF));
 }
 
 /**
@@ -239,6 +228,11 @@ void __attribute__ ((optimize("-O3")))
 CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 {
   CAN_Message_t *msg;
+  if (CANCircularBuffer_isEmpty (&canTxBuffer))
+    {
+      canState = e_CANMachineState_IDLE;
+      return;
+    }
   while ((msg = CANCircularBuffer_getMessage (&canTxBuffer)))
     {
       if ((HAL_GetTick () - msg->timestamp) > CAN_MSG_LIFETIME_MS)
@@ -340,7 +334,7 @@ can_machine (void)
     {
     case e_can_machine_state_init:
       {
-	can_machine_init_0();
+	can_machine_init_0 ();
 	can_machine_state = e_can_machine_state_idle;
 	canState = e_CANMachineState_IDLE;
 	canTxLast_ms = HAL_GetTick ();
@@ -353,14 +347,28 @@ can_machine (void)
 
 	StartCan ();
 	CAN_Message_t tmp;
-	  uint8_t command = AFECommand_resetAll;
-	  uint32_t msg_id = CAN_ID_IN_MSG;
-	  tmp.timestamp = HAL_GetTick ();
-	  tmp.id = msg_id;
-	  tmp.data[0] = command; // Standard reply [function]
-	  tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
-	  tmp.dlc = 2;
-	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
+	uint8_t command = AFECommand_resetAll;
+	uint32_t msg_id = CAN_ID_IN_MSG;
+	typedef enum
+	{
+	  RESET_UNKNOWN = 0,
+	  RESET_POWER_ON,
+	  RESET_PIN,
+	  RESET_BROWN_OUT,
+	  RESET_SOFTWARE,
+	  RESET_WATCHDOG,
+	  RESET_WINDOW_WATCHDOG,
+	  RESET_LOW_POWER
+	} ResetReason_t;
+	tmp.timestamp = HAL_GetTick ();
+	tmp.id = msg_id;
+	tmp.data[0] = command; // Standard reply [function]
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+	tmp.data[2] = RCC->CSR;
+	RCC->CSR |= RCC_CSR_RMVF;  // Set the RMVF bit to clear all reset flags
+	__DSB ();  // Ensure the flag is cleared before continuing execution
+	tmp.dlc = 3;
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 
 	break;
       }

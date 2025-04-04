@@ -313,7 +313,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
 	  }
 	case e_average_RMS:
 	  {
-	    average_result = sqrt (sum / cnt);
+	    average_result = sqrtf (sum / cnt);
 	    break;
 	  }
 	case e_average_HARMONIC:
@@ -323,7 +323,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
 	  }
 	case e_average_GEOMETRIC:
 	  {
-	    average_result = pow (sum, 1.0 / cnt);
+	    average_result = powf (sum, 1.0 / cnt);
 	    break;
 	  }
 #if USE_ARIMA

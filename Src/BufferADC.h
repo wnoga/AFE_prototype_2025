@@ -15,8 +15,8 @@
 // Structure to store ADC measurement and timestamp
 typedef struct __attribute__((packed))
 {
-  uint16_t adc_value; // Raw ADC value (assuming 10-bit ADC, adjust based on resolution)
   uint32_t timestamp_ms; // Timestamp in milliseconds since MCU start
+  uint16_t adc_value; // Raw ADC value (assuming 10-bit ADC, adjust based on resolution)
 } s_ADC_Measurement;
 
 // Circular buffer structure
