@@ -26,8 +26,7 @@ inline float __attribute__ ((always_inline, optimize("-O3")))
 get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings)
 {
   return get_voltage_for_SiPM (T, regulatorSettings->a, regulatorSettings->T_0,
-			       regulatorSettings->U_0,
-			       regulatorSettings->U_offset);
+			       regulatorSettings->U_0, regulatorSettings->U_offset);
 }
 
 /* COMPUTE FUNCTIONS */
@@ -41,17 +40,15 @@ faxplusb (float value, s_channelSettings *ch)
 int
 compare_measurements (const void *a, const void *b)
 {
-  float diff = ((s_ADC_Measurement*) a)->adc_value
-      - ((s_ADC_Measurement*) b)->adc_value;
+  float diff = ((s_ADC_Measurement*) a)->adc_value - ((s_ADC_Measurement*) b)->adc_value;
   return (diff > 0) - (diff < 0); // Returns -1, 0, or 1
 }
 
 static float __attribute__((deprecated))
-calculate_average (s_ADC_Measurement *data, size_t N, e_average method,
-		   float alpha, uint32_t timestamp_ms)
+calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float alpha,
+		   uint32_t timestamp_ms)
 {
-  if (N == 0)
-    return 0.0f;
+  if (N == 0) return 0.0f;
   float sum = 0.0f;
   float result = 0.0f;
   float weight_sum = 0.0f;
@@ -82,8 +79,7 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method,
       qsort (data, N, sizeof(s_ADC_Measurement), compare_measurements);
       result =
 	  (N % 2 == 0) ?
-	      (data[N / 2 - 1].adc_value + data[N / 2].adc_value) / 2.0 :
-	      data[N / 2].adc_value;
+	      (data[N / 2 - 1].adc_value + data[N / 2].adc_value) / 2.0 : data[N / 2].adc_value;
       break;
 
     case e_average_RMS:
@@ -141,8 +137,7 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method,
 }
 
 inline size_t __attribute__ ((always_inline, optimize("-O3")))
-next_index (size_t i, size_t i_0, size_t N, size_t buffer_size,
-	    uint8_t backward)
+next_index (size_t i, size_t i_0, size_t N, size_t buffer_size, uint8_t backward)
 {
   if (backward)
     {
@@ -154,10 +149,20 @@ next_index (size_t i, size_t i_0, size_t N, size_t buffer_size,
     }
 }
 
+/***
+ * @brief Calculates the average value from the ADC buffer based on the specified method.
+ *
+ * This function retrieves a set of ADC measurements from the circular buffer and computes
+ * their average using the specified averaging method. It supports various methods such as
+ * standard, exponential, RMS, harmonic, geometric, and weighted exponential averaging.
+ * It also handles time-based filtering of measurements and can use ARIMA for more advanced
+ * time-series analysis.
+ *
+ * @param cb Pointer to the circular buffer containing ADC measurements.
+ */
 static float __attribute__ ((optimize("-O3")))
-get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
-			 uint32_t max_dt_ms, e_average method, float alpha,
-			 float multiplicator)
+get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms,
+			 e_average method, float alpha, float multiplicator)
 {
   if (cb->head == cb->tail)
     {
@@ -168,17 +173,15 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
   s_ADC_Measurement *ptr0 = &cb->buffer[i_0];
   if ((cb_count == 1) || (method == e_average_NONE))
     {
-      return (float)ptr0->adc_value * multiplicator;
+      return (float) ptr0->adc_value * multiplicator;
     }
   else if (N > cb_count)
     {
       N = cb_count;
     }
 
-  float average_result=0.0;
+  float average_result = 0.0;
   size_t count = 0;
-//  uint32_t usum = 0;
-//  uint32_t uweight_sum = 0;
   float sum = 0.0f;
   float weight_sum = 0.0f;
   float value;
@@ -202,12 +205,14 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
   s_ADC_Measurement *ptr;
   size_t i;
   size_t cnt = 0;
+  /* Set default value for sum */
   if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
     {
       sum = NAN;
     }
   for (count = 0; count < N; ++count)
     {
+      /* Check if we should use moving average */
       if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC)
 	  || (method == e_average_ARIMA))
 	{
@@ -220,6 +225,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
 	    }
 	}
       else
+      /* Use standard method */
 	{
 	  i = (i_0 - count) % cb->buffer_size; // decrement buffer index from head index
 	  ptr = &cb->buffer[i];
@@ -228,13 +234,15 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
 	      break;
 	    }
 	}
-      value = (float)ptr->adc_value;
+      /* Get value */
+      value = (float) ptr->adc_value;
       if (isnanf (value))
 	{
 	  continue;
 	}
       ++cnt;
       switch (method)
+	/* Calculate sum */
 	{
 	case e_average_STANDARD:
 	  {
@@ -287,6 +295,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
 	}
     }
 
+  /* Check if we have any data */
   if (cnt == 0)
     {
       average_result = NAN;
@@ -294,6 +303,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
   else
     {
       switch (method)
+	/* Calculate average */
 	{
 	case e_average_STANDARD:
 	  {
@@ -307,8 +317,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
 	  }
 	case e_average_WEIGHTED_EXPONENTIAL:
 	  {
-	    average_result =
-		(weight_sum != 0) ? sum / weight_sum : ptr0->adc_value;
+	    average_result = (weight_sum != 0) ? sum / weight_sum : ptr0->adc_value;
 	    break;
 	  }
 	case e_average_RMS:
@@ -343,7 +352,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms,
 	    arima_apply_ARMA (arima_diff_values, arima_n, arima_time_diffs,
 			      ar_coeffs, p, ma_coeffs, q, alpha,
 			      arima_predicted); // predicting
-	    arima_inverse_differencing (arima_predicted, arima_series_value,
+	    arima_inverse_differencing (arima_predicted, arima_series_value, // TODO Check if this is correct
 					arima_n, d, arima_smoothing); // smoothing
 	    *average_result = arima_series_value[arima_n - 1]
 		+ arima_smoothing[arima_n - 1]; // add current value to smoothing or predicting

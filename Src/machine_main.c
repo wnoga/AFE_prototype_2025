@@ -5,7 +5,6 @@
  *      Author: blondier94
  */
 
-
 #include "machine_main.h"
 
 #include "BufferADC.h"
@@ -27,7 +26,7 @@ s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RA
 
 typedef enum
 {
-  e_adc_channel_DC_LEVEL_MEAS0=0,
+  e_adc_channel_DC_LEVEL_MEAS0 = 0,
   e_adc_channel_DC_LEVEL_MEAS1,
   e_adc_channel_U_SIPM_MEAS0,
   e_adc_channel_U_SIPM_MEAS1,
@@ -58,7 +57,8 @@ uint32_t periodic_send_info_start_ms = 0;
 int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
 int8_t machine_temperatureLoop_enabled[2];
 
-void update_buffer_by_channelSettings(s_channelSettings *averagingSettings)
+void
+update_buffer_by_channelSettings (s_channelSettings *averagingSettings)
 {
   averagingSettings->buffer_ADC->tail = averagingSettings->buffer_ADC->head = 0;
 }
@@ -147,7 +147,7 @@ send_SensorDataSi_average (uint8_t msg_id, uint8_t command, CANCircularBuffer_t 
   CAN_Message_t tmp;
   tmp.id = msg_id;
   tmp.timestamp = HAL_GetTick (); // for timeout
-  adc_value_real = get_average_atSettings (ch,tmp.timestamp);
+  adc_value_real = get_average_atSettings (ch, tmp.timestamp);
   tmp.data[0] = command;
   tmp.data[1] = get_byte_of_message_number (0, 1);
   tmp.data[2] = ch->channel_nr;
@@ -202,8 +202,8 @@ machine_SPI_Transmit (SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size, ui
 static HAL_StatusTypeDef
 AD8402_Write (SPI_HandleTypeDef *hspi, uint8_t channel, uint8_t value, uint32_t timeout)
 {
-  uint16_t data = ((channel & 0x03) << 8) | (value & 0xFF);  // 10-bit format
-  return machine_SPI_Transmit (hspi, (uint8_t*) &data, 1, timeout);
+  uint16_t data = ((channel & 0x03) << 8) | (value & 0xFF);
+  HAL_SPI_Transmit (hspi, (uint8_t*) &data, 1, timeout);
 }
 
 /***
@@ -323,11 +323,16 @@ machine_DAC_set_si (uint8_t channel, float voltage)
 {
   const float V_min = 50.0f;
   const float V_max = 82.0f;
-  if (voltage < V_min)
+  if (voltage == 0)
+    {
+      machine_DAC_set (channel, UINT16_MAX);
+      return;
+    }
+  else if (voltage < V_min)
     {
       voltage = V_min;
     }
-  if (voltage > V_max)
+  else if (voltage > V_max)
     {
       voltage = V_max;
     }
@@ -427,9 +432,13 @@ machine_DAC_convert_mv_to_dac_value (float mV)
 #warning "FIXME Create conversion from float to DAC uint16_t value"
   return mV;
 }
+
+/***
+ */
 void __attribute__ ((cold, optimize("-Os")))
 machine_main_init_0 (void)
 {
+  /* Set state to init */
   machine_main_status = e_machine_main_init;
   for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
     {
@@ -449,8 +458,9 @@ machine_main_init_0 (void)
       machnie_flag_averaging_enabled[i0] = 0;
 
       init_buffer (&bufferADC[i0], &adc_measurement_raw[i0][0], ADC_MEASUREMENT_RAW_SIZE_MAX,
-		   ADC_MEASUREMENT_RAW_DEFAULT_DT_MS);
+      ADC_MEASUREMENT_RAW_DEFAULT_DT_MS);
     }
+  /* Set default values for regulator */
 
   for (uint8_t i0 = 0; i0 < 2; ++i0)
     {
@@ -469,11 +479,14 @@ machine_main_init_0 (void)
       regulatorSettings[i0].ramp_target_voltage_set_bits = AFE_DAC_START;
     }
 
+  /* Set channel for temperature */
   /* Append ADC channel to regulator settings */
   regulatorSettings[0].temperature_channelSettings_ptr = &channelSettings[e_ADC_CHANNEL_TEMP_LOCAL];
   regulatorSettings[1].temperature_channelSettings_ptr = &channelSettings[e_ADC_CHANNEL_TEMP_EXT];
 }
 
+/***
+ */
 static uint32_t value0;
 void __attribute__ ((optimize("-O3")))
 can_execute (const s_can_msg_recieved msg)
@@ -484,6 +497,7 @@ can_execute (const s_can_msg_recieved msg)
   tmp.timestamp = HAL_GetTick ();
   tmp.id = msg_id;
   tmp.data[0] = command; // Standard reply [function]
+  tmp.data[1] = 0x00;
   tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
   // (0xF0 >> 4) = total number of messages in queue
   // (0x0F) = message number (in the queue)
@@ -512,7 +526,7 @@ can_execute (const s_can_msg_recieved msg)
       }
     case 0x02: // setValue0
       {
-	tmp.dlc = 2 + 1;
+	tmp.dlc = 3;
 	value0 = *((uint32_t*) &msg.Data[2]);
 	tmp.data[2] = 1;
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
@@ -538,7 +552,7 @@ can_execute (const s_can_msg_recieved msg)
 	    if (channels & (1 << channel)) // loop over channel mask
 	      {
 		get_n_latest_from_buffer (channelSettings[channel].buffer_ADC, 1, &adc_val);
-		adc_value_real = faxplusb(adc_val.adc_value, &channelSettings[channel]);
+		adc_value_real = faxplusb (adc_val.adc_value, &channelSettings[channel]);
 		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
 							     total_msg_count, channel,
 							     &adc_value_real);
@@ -604,7 +618,7 @@ can_execute (const s_can_msg_recieved msg)
       {
 	uint8_t spiData[5];
 	uint8_t spiDataLen = msg.Data[2];
-	tmp.dlc = 2 + 1;
+	tmp.dlc = 3;
 	if (spiDataLen > 5)
 	  {
 	    tmp.data[2] = HAL_ERROR;
@@ -621,7 +635,7 @@ can_execute (const s_can_msg_recieved msg)
       {
 	uint8_t channels = msg.Data[2];
 	uint8_t value = msg.Data[3];
-	tmp.data[1] = get_byte_of_message_number(0, 1);
+	tmp.data[1] = get_byte_of_message_number (0, 1);
 	tmp.data[2] = channels;
 	tmp.data[3] = value;
 	tmp.data[4] = 0x00; // masked error status
@@ -633,7 +647,7 @@ can_execute (const s_can_msg_recieved msg)
 		tmp.data[4] |= AD8402_Write (&hspi1, channel, value, TIMEOUT_SPI1_MS) << channel;
 	      }
 	  }
-	CANCircularBuffer_enqueueMessage(&canTxBuffer,&tmp);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
     case AFECommand_writeGPIO:
@@ -642,7 +656,7 @@ can_execute (const s_can_msg_recieved msg)
 	uint32_t GPIO_Pin = 1 << msg.Data[3];
 	uint8_t PinState = msg.Data[4];
 	machine_GPIO_WritePin (GPIOx, GPIO_Pin, PinState);
-	tmp.data[1] = get_byte_of_message_number (0, 1);
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	tmp.data[2] = msg.Data[2];
 	tmp.data[3] = msg.Data[3];
 	tmp.data[4] = msg.Data[4];
@@ -656,6 +670,7 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setTemperatureLoopForChannelState_byMask_asMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
       {
 	uint8_t channels = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	uint8_t status = msg.Data[3];
 	tmp.data[2] = channels;
 	tmp.data[3] = status;
@@ -674,7 +689,7 @@ can_execute (const s_can_msg_recieved msg)
       {
 	uint8_t channels = msg.Data[2];
 	uint16_t value = 0;
-	tmp.data[1] = get_byte_of_message_number(0, 1);
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	tmp.data[2] = channels;
 	memcpy (&tmp.data[3], &msg.Data[3], sizeof(uint16_t));
 	tmp.dlc = 3 + sizeof(uint16_t);
@@ -700,6 +715,7 @@ can_execute (const s_can_msg_recieved msg)
       {
 	uint8_t channel = msg.Data[2];
 	regulatorSettings[channel].enabled = msg.Data[3];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	float valueSi = 0.0;
 	memcpy (&valueSi, &msg.Data[3], sizeof(float));
 	/* FIXME Add function to convert DAC SI value to uint16_t */
@@ -735,6 +751,7 @@ can_execute (const s_can_msg_recieved msg)
       {
 	for (uint8_t channel = 0; channel < 2; ++channel)
 	  {
+	    tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	    regulatorSettings[channel].enabled = 0;
 	  }
 	tmp.data[2] = 1;
@@ -746,7 +763,7 @@ can_execute (const s_can_msg_recieved msg)
       {
 	uint8_t channels = msg.Data[2];
 	uint8_t status = msg.Data[3];
-	tmp.data[1] = get_byte_of_message_number(0, 1);
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	tmp.data[2] = channels; // Copy mask
 	tmp.data[3] = msg.Data[3]; // Copy values mask
 	tmp.data[4] = 0x00; // Clear error status
@@ -754,7 +771,8 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (channels & (1 << channel))
 	      {
-		tmp.data[4] |= machine_DAC_switch(channels, status & (1 << channel) ? 1 : 0) << channel;
+		tmp.data[4] |= machine_DAC_switch (channels, status & (1 << channel) ? 1 : 0)
+		    << channel;
 	      }
 	  }
 	tmp.dlc = 5;
@@ -772,6 +790,7 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setAveragingMode_byMask: // set averagingSettings.averaging_method
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
@@ -786,12 +805,12 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setAveragingAlpha_byMask: // set averagingSettings.alpha
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
 	      {
-		memcpy (&channelSettings[channel].alpha, &msg.Data[3],
-			sizeof(float));
+		memcpy (&channelSettings[channel].alpha, &msg.Data[3], sizeof(float));
 		update_buffer_by_channelSettings (&channelSettings[channel]);
 	      }
 	  }
@@ -800,6 +819,7 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setAveragingBufferSize_byMask: // set averagingSettings.buffer_size
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
@@ -814,6 +834,7 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setChannel_dt_ms_byMask:
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
@@ -828,12 +849,12 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setAveraging_max_dt_ms_byMask: // set averagingSettings.max_dt_ms
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
 	      {
-		memcpy (&channelSettings[channel].max_dt_ms, &msg.Data[3],
-			sizeof(uint32_t));
+		memcpy (&channelSettings[channel].max_dt_ms, &msg.Data[3], sizeof(uint32_t));
 		update_buffer_by_channelSettings (&channelSettings[channel]);
 	      }
 	  }
@@ -842,12 +863,12 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setChannel_multiplicator_byMask: // set averagingSettings.multiplicator
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
 	      {
-		memcpy (&channelSettings[channel].multiplicator, &msg.Data[3],
-			sizeof(float));
+		memcpy (&channelSettings[channel].multiplicator, &msg.Data[3], sizeof(float));
 		update_buffer_by_channelSettings (&channelSettings[channel]);
 	      }
 	  }
@@ -861,12 +882,12 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setChannel_a_byMask:
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
 	      {
-		memcpy (&channelSettings[channel].a, &msg.Data[3],
-			sizeof(float));
+		memcpy (&channelSettings[channel].a, &msg.Data[3], sizeof(float));
 		update_buffer_by_channelSettings (&channelSettings[channel]);
 	      }
 	  }
@@ -875,12 +896,12 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setChannel_b_byMask:
       {
 	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channelMask & (1 << channel))
 	      {
-		memcpy (&channelSettings[channel].b, &msg.Data[3],
-			sizeof(float));
+		memcpy (&channelSettings[channel].b, &msg.Data[3], sizeof(float));
 		update_buffer_by_channelSettings (&channelSettings[channel]);
 	      }
 	  }
@@ -911,18 +932,20 @@ machine_calculate_averageValues (float *here)
     {
       if (machnie_flag_averaging_enabled[i0])
 	{
-	  here[i0] = get_average_atSettings(&channelSettings[i0],timestamp_now);
+	  here[i0] = get_average_atSettings (&channelSettings[i0], timestamp_now);
 	}
     }
 }
 
 /***
- * Here is the temperature loop
+ * @brief Temperature control loop.
+ * This function implements the temperature control loop for the AFE device.
+ * It reads temperature measurements, calculates the required voltage for SiPMs,
+ * and adjusts the DAC output accordingly.
  */
 void __attribute__ ((optimize("-O3")))
 machine_control (void)
 {
-  return;
   /* Calculate values for DAC -- active part of the Temperature Loop */
   for (uint8_t channel = 0; channel < 2; ++channel)
     {
@@ -1051,7 +1074,6 @@ machine_periodic_report (void)
 
 static uint32_t last_blink = 0;
 
-
 void
 machine_main (void)
 {
@@ -1062,11 +1084,11 @@ machine_main (void)
 	machine_main_status = e_machine_main_idle;
 	modify_aurt_as_test_led ();
 
-	  for (uint8_t i0 = 0; i0 < 2; ++i0)
-	    {
-	      HAL_Delay (50);
-	      blink1 ();
-	    }
+	for (uint8_t i0 = 0; i0 < 2; ++i0)
+	  {
+	    HAL_Delay (50);
+	    blink1 ();
+	  }
 //	/* Start ADC in DMA mode */
 	HAL_ADC_Start_DMA (&hadc, (uint16_t*) &adc_dma_buffer[0], 8);
 	HAL_TIM_Base_Start (&htim1);
@@ -1088,7 +1110,7 @@ machine_main (void)
 	  }
 
 	machine_control ();
-	machine_periodic_report();
+	machine_periodic_report ();
 	break;
       }
     default:
@@ -1104,7 +1126,8 @@ HAL_ADC_ConvCpltCallback (ADC_HandleTypeDef *hadc)
 //    __DSB();  // Data Synchronization Barrier (ensures previous memory accesses complete)
 
   /* Store timestamp */
-  s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback = {HAL_GetTick (),0};
+  s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback =
+    { HAL_GetTick (), 0 };
 
   for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
     {
@@ -1120,4 +1143,3 @@ HAL_ADC_ConvCpltCallback (ADC_HandleTypeDef *hadc)
   /* Ensure ISR execution order is correct before exiting */
 //    __ISB();  // Instruction Synchronization Barrier (ensures all instructions complete before next)
 }
-

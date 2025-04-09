@@ -39,28 +39,40 @@ blink1 (void)
 //    }
 }
 
-GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator)
+GPIO_TypeDef*
+GetGPIOPortByEnumerator (uint8_t enumerator)
 {
-  GPIO_TypeDef *port=NULL;
+  GPIO_TypeDef *port = NULL;
 #if USE_SHIFTING_IN_SetPinFromArray
     // Calculate port address by shifting from GPIOA base
     port = (GPIO_TypeDef *)((uint32_t)GPIOA + (enumerator * ((uint32_t)GPIOB - (uint32_t)GPIOA)));
 #else
   switch (enumerator)
     {
-      case 0:port=GPIOA;break;
-      case 1:port=GPIOB;break;
-      case 2:port=GPIOC;break;
-      case 3:port=GPIOD;break;
-      case 4:port=GPIOE;break;
-      case 5:port=GPIOF;break;
-      default:break;
+    case 0:
+      port = GPIOA;
+      break;
+    case 1:
+      port = GPIOB;
+      break;
+    case 2:
+      port = GPIOC;
+      break;
+    case 3:
+      port = GPIOD;
+      break;
+    case 4:
+      port = GPIOE;
+      break;
+    case 5:
+      port = GPIOF;
+      break;
+    default:
+      break;
     }
 #endif
   return port;
 }
-
-
 
 /**
  * @brief Return 1 if ID are equal
@@ -86,7 +98,7 @@ configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id)
   CAN_FilterConfTypeDef sFilterConfig;
 //  CAN_FilterTypeDef sFilterConfig;
 
-  // Validate receiver ID
+// Validate receiver ID
   if (own_id > 0xFF)
     {
       return HAL_ERROR;  // Invalid receiver ID
@@ -145,7 +157,7 @@ HAL_CAN_ErrorCallback (CAN_HandleTypeDef *hcan)
 {
   CAN_TransmitCallback (hcan);
   HAL_CAN_Receive_IT (hcan, CAN_FIFO0);
-  NVIC_SystemReset();
+  NVIC_SystemReset ();
 }
 
 // Initialize circular buffer
@@ -276,7 +288,7 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 void __attribute__ ((optimize("-O3")))
 CAN_TransmitCallback (CAN_HandleTypeDef *hcan)
 {
-  CANCircularBuffer_deleteMessage(&canTxBuffer);
+  CANCircularBuffer_deleteMessage (&canTxBuffer);
   canState = e_CANMachineState_IDLE; // Set state back to idle
 }
 
@@ -294,7 +306,8 @@ can_send_msg (CAN_HandleTypeDef *hcan, uint8_t *msg, size_t len, uint8_t own_id,
   hcan->pTxMsg->RTR = CAN_RTR_DATA;
 }
 
-void modify_aurt_as_test_led(void)
+void
+modify_aurt_as_test_led (void)
 {
   GPIO_InitTypeDef GPIO_InitStruct;
 
@@ -305,7 +318,7 @@ void modify_aurt_as_test_led(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  HAL_GPIO_Init (GPIOA, &GPIO_InitStruct);
 }
 
 typedef enum
@@ -410,8 +423,8 @@ CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Messag
 					     uint8_t msg_index, uint8_t total_msg_count,
 					     uint8_t channel, float *value)
 {
-  CANCircularBuffer_enqueueMessage_data (cb, tmp, msg_index, total_msg_count, channel, (void*)value,
-					 sizeof(float));
+  CANCircularBuffer_enqueueMessage_data (cb, tmp, msg_index, total_msg_count, channel,
+					 (void*) value, sizeof(float));
 }
 
 void
@@ -429,7 +442,7 @@ CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN_Mess
 void __attribute__ ((optimize("-O3")))
 HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
 {
-  if (is_this_msg_for_me(hcan->pRxMsg, CAN_ID) && (hcan->pRxMsg->DLC <= 8))
+  if (is_this_msg_for_me (hcan->pRxMsg, CAN_ID) && (hcan->pRxMsg->DLC <= 8))
     {
       can_msg_received.DLC = hcan->pRxMsg->DLC;
       can_msg_received.timestamp = HAL_GetTick ();
