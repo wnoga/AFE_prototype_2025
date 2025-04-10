@@ -354,7 +354,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 			      arima_predicted); // predicting
 	    arima_inverse_differencing (arima_predicted, arima_series_value, // TODO Check if this is correct
 					arima_n, d, arima_smoothing); // smoothing
-	    *average_result = arima_series_value[arima_n - 1]
+	    average_result = arima_series_value[arima_n - 1]
 		+ arima_smoothing[arima_n - 1]; // add current value to smoothing or predicting
 	    break;
 	  }

@@ -528,71 +528,25 @@ static void MX_ADC_Init(void)
     Error_Handler();
   }
 
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_0;
+  // Configure the 8 specific channels
+  const uint32_t channels[] =
+    {
+    ADC_CHANNEL_0,
+    ADC_CHANNEL_1,
+    ADC_CHANNEL_2,
+    ADC_CHANNEL_3,
+    ADC_CHANNEL_6,
+    ADC_CHANNEL_7,
+    ADC_CHANNEL_8,
+    ADC_CHANNEL_9 };
+
   sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
   sConfig.SamplingTime = ADC_SAMPLETIME_71CYCLES_5;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_1;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_2;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_3;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_6;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_7;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_8;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = ADC_CHANNEL_9;
-  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
+  for (size_t i0 = 0; i0 < (sizeof(channels) / sizeof(channels[0])); ++i0)
+    {
+      sConfig.Channel = channels[i0];
+      HAL_ADC_ConfigChannel (&hadc, &sConfig);
+    }
   /* USER CODE BEGIN ADC_Init 2 */
 
   /* USER CODE END ADC_Init 2 */

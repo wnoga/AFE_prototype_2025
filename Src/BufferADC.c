@@ -12,12 +12,9 @@
 #include <time.h>
 
 #if defined (STM32F072xB)
+#include <stm32f0xx_hal.h>
 #else
-uint32_t __attribute__((weak))
-HAL_GetTick (void)
-{
-  return (uint32_t) (clock () * 1000 / CLOCKS_PER_SEC);
-}
+#include "mock_hal.h"
 #endif
 
 /**
@@ -40,6 +37,7 @@ init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uin
   cb->dt_ms = dt_ms;
   cb->buffer[0].timestamp_ms = 0;
   cb->buffer[0].adc_value = 0;
+  memset (cb->buffer, 0, buffer_size * sizeof(s_ADC_Measurement));
 }
 
 /**
@@ -56,28 +54,6 @@ inline size_t __attribute__ ((always_inline, optimize("-O3")))
 CircularBuffer_GetItemCount (const s_BufferADC *cb)
 {
   return cb->head >= cb->tail ? cb->head - cb->tail : cb->buffer_size - (cb->tail - cb->head);
-}
-
-/**
- * @brief Checks if the time difference between two timestamps exceeds a threshold.
- *
- * This function checks if the difference between the current timestamp and the measurement timestamp is greater than the maximum allowed time difference plus a tolerance.
- */
-int __attribute__ ((optimize("-O3")))
-check_time_diff_is_more_than (uint32_t measurement_timestamp_ms, uint32_t timestamp_ms,
-			      uint32_t max_dt_ms, uint32_t dt_ms)
-{
-  float tmp = (float) max_dt_ms + ((float) dt_ms / 10.0);
-  tmp = roundf (tmp);
-
-  if ((timestamp_ms - measurement_timestamp_ms) > (uint32_t) tmp)
-    {
-      return 1;
-    }
-  else
-    {
-      return 0;
-    }
 }
 
 /**
@@ -108,19 +84,18 @@ get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N, s_ADC_Measurement
       N = cb_count; // Limit N to the current buffer count
     }
   size_t start_index = (cb->head == 0) ? (cb->buffer_size - 1) : (cb->head - 1);
-
+  size_t index = start_index;
   // Read N elements backwards in the buffer
   for (size_t i = 0; i < N; i++)
     {
-      if (check_time_diff_is_more_than (cb->buffer[start_index].timestamp_ms, timestamp_ms,
-					max_dt_ms, cb->dt_ms) && (max_dt_ms != 0))
+      if ((timestamp_ms - cb->buffer[index].timestamp_ms) > max_dt_ms)
 	{
-	  return i;
+	  break;
 	}
       else
 	{
-	  here[i] = cb->buffer[start_index]; // Copy to output array
-	  start_index = (start_index == 0) ? (cb->buffer_size - 1) : (start_index - 1);
+	  here[i] = cb->buffer[index]; // Copy to output array
+	  index = (index == 0) ? (cb->buffer_size - 1) : (index - 1); // Decrement index
 	}
     }
   return N;
@@ -164,10 +139,22 @@ add_to_buffer (s_BufferADC *cb, const s_ADC_Measurement *measurement)
     }
   // Copy the new measurement to the buffer at the current head position
   memcpy (&cb->buffer[cb->head], measurement, sizeof(s_ADC_Measurement));
-  cb->head = (cb->head + 1) % cb->buffer_size;
-  if (cb->head == cb->tail) // Buffer is full
+
+  // Increment head, handling wrap-around
+  ++cb->head;
+  if (cb->head >= cb->buffer_size)
     {
-      cb->tail = (cb->tail + 1) % cb->buffer_size; // Move the tail to discard the oldest entry
+      cb->head = 0; // Wrap around
     }
-  return;
+
+  // Check if buffer is full (head has wrapped around and caught up with tail)
+  if (cb->head == cb->tail)
+    {
+      // Move the tail to discard the oldest entry, handling wrap-around
+      ++cb->tail;
+      if (cb->tail >= cb->buffer_size)
+	{
+	  cb->tail = 0;
+	}
+    }
 }

@@ -39,6 +39,17 @@ blink1 (void)
 //    }
 }
 
+void
+nice (void)
+{
+  for (size_t _ = 0; _ < 7; ++_)
+    {
+      blink1 ();
+      HAL_Delay (25);
+    }
+  HAL_GPIO_WritePin (GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+}
+
 GPIO_TypeDef*
 GetGPIOPortByEnumerator (uint8_t enumerator)
 {
@@ -50,22 +61,22 @@ GetGPIOPortByEnumerator (uint8_t enumerator)
   switch (enumerator)
     {
     case 0:
-      port = GPIOA;
+      port = (GPIO_TypeDef *)GPIOA;
       break;
     case 1:
-      port = GPIOB;
+      port = (GPIO_TypeDef *)GPIOB;
       break;
     case 2:
-      port = GPIOC;
+      port = (GPIO_TypeDef *)GPIOC;
       break;
     case 3:
-      port = GPIOD;
+      port = (GPIO_TypeDef *)GPIOD;
       break;
     case 4:
-      port = GPIOE;
+      port = (GPIO_TypeDef *)GPIOE;
       break;
     case 5:
-      port = GPIOF;
+      port = (GPIO_TypeDef *)GPIOF;
       break;
     default:
       break;
@@ -408,11 +419,11 @@ get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
 
 void
 CANCircularBuffer_enqueueMessage_data (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
-				       uint8_t msg_index, uint8_t total_msg_count, uint8_t channel,
-				       void *value, uint8_t size)
+				       uint8_t msg_index, uint8_t total_msg_count, uint8_t channel_mask,
+				       uint8_t *value, uint8_t size)
 {
   tmp->data[1] = get_byte_of_message_number (msg_index, total_msg_count);
-  tmp->data[2] = 1 << channel; // create mask of the channel
+  tmp->data[2] = channel_mask;
   tmp->dlc = 2 + 1 + size;
   memcpy (&tmp->data[3], value, size);
   CANCircularBuffer_enqueueMessage (cb, tmp);
@@ -421,10 +432,10 @@ CANCircularBuffer_enqueueMessage_data (CANCircularBuffer_t *cb, CAN_Message_t *t
 void
 CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
 					     uint8_t msg_index, uint8_t total_msg_count,
-					     uint8_t channel, float *value)
+					     uint8_t channel_mask, float *value)
 {
-  CANCircularBuffer_enqueueMessage_data (cb, tmp, msg_index, total_msg_count, channel,
-					 (void*) value, sizeof(float));
+  CANCircularBuffer_enqueueMessage_data (cb, tmp, msg_index, total_msg_count, channel_mask,
+					 (uint8_t*) value, sizeof(float));
 }
 
 void

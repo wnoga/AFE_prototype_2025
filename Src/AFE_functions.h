@@ -34,11 +34,12 @@ typedef enum
   AFECommand_getSerialNumber = 0x00,
   AFECommand_getVersion = 0x01,
   AFECommand_resetAll = 0x03,
+  AFECommand_startADC = 0x04,
 
   AFECommand_getSensorDataSi_last_byMask = 0x30,
   AFECommand_getSensorDataSi_average_byMask = 0x31,
 
-  AFECommand_getSensorDataSiAndTimestamp_average_byMask = 0x3B,
+//  AFECommand_getSensorDataSiAndTimestamp_average_byMask = 0x3B,
   AFECommand_getSensorDataSi_all_periodic_average = 0x3F,
 
   AFECommand_setSensorDataSi_periodic_last = 0x40,
@@ -54,7 +55,7 @@ typedef enum
   AFECommand_setDACValueRaw_bySubdeviceMask = 0xC2,
   AFECommand_setDACValueSi_bySubdeviceMask = 0xC3,
   AFECommand_stopTemperatureLoopForAllChannels = 0xC4,
-  AFECommand_setDAC_bySubdeviceMask_asMask = 0xC5,
+  AFECommand_setDAC_bySubdeviceMask = 0xC5,
   AFECommand_setDACRampOneBytePerMillisecond_ms = 0xC6,
 
   AFECommand_setAveragingMode_byMask = 0xD0,
