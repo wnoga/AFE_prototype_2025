@@ -593,7 +593,7 @@ getUID (void)
 void _Error_Handler(char *file, int line)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  for (uint8_t i0 = 0; i0 < 20; ++i0)
+  for (uint8_t i0 = 0; i0 < 40; ++i0)
     {
       HAL_Delay (50);
       blink1 ();

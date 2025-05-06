@@ -68,6 +68,10 @@ typedef enum
   AFECommand_setChannel_a_byMask = 0xD7,
   AFECommand_setChannel_b_byMask = 0xD8,
 
+  AFECommand_setRegulator_a_byMask = 0xE7,
+  AFECommand_setRegulator_b_byMask = 0xE8,
+  AFECommand_setRegulator_U_offset_byMask = 0xE9,
+
   AFECommand_debug_machine_control = 0xF1
 } AFECommand;
 
@@ -152,11 +156,11 @@ typedef struct __attribute__((packed))
   e_subdevice subdevice;
   s_channelSettings *temperature_channelSettings_ptr;
   /* Temperature loop parameters */
-  float dT; // minimum temperature change to drive ADC
+  float dT; // [deg C] minimum temperature change to drive ADC
   /* a*(T-T_0)+U_0+U_offset */
   float a; // [V/deg T]
+  float b; // U_0 [V]
   float T_0; // [deg C]
-  float U_0; // [V]
   float U_offset; // [V]
   /* Old temperature value */
   float T_old;
@@ -167,12 +171,16 @@ typedef struct __attribute__((packed))
   uint32_t ramp_bit_step_timestamp_old_ms;
   uint16_t ramp_curent_voltage_set_bits;
   uint16_t ramp_target_voltage_set_bits;
+#if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+  uint16_t ramp_target_voltage_set_bits_old; // prevent sending many times msg when is not change in DAC target value
+#endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
 } s_regulatorSettings;
 
 
 float get_average_atSettings (s_channelSettings *a, uint32_t timestamp);
 float get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings);
-float faxplusb (float value, s_channelSettings *ch);
+float faxplusb (float value, float a, float b);
+float faxplusbcs (float value, s_channelSettings *ch);
 uint8_t get_number_of_channels (uint8_t channels_mask);
 
 #endif /* AFE_FUNCTIONS_H_ */

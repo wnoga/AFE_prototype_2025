@@ -26,15 +26,21 @@ inline float __attribute__ ((always_inline, optimize("-O3")))
 get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings)
 {
   return get_voltage_for_SiPM (T, regulatorSettings->a, regulatorSettings->T_0,
-			       regulatorSettings->U_0, regulatorSettings->U_offset);
+			       regulatorSettings->b, regulatorSettings->U_offset);
 }
 
 /* COMPUTE FUNCTIONS */
 
 inline float __attribute__ ((always_inline, optimize("-O3")))
-faxplusb (float value, s_channelSettings *ch)
+faxplusb (float value, float a, float b)
 {
-  return ch->a * value + ch->b;
+  return a * value + b;
+}
+
+inline float __attribute__ ((always_inline, optimize("-O3")))
+faxplusbcs (float value, s_channelSettings *ch)
+{
+  return faxplusb(value, ch->a, ch->b);
 }
 
 int
@@ -382,7 +388,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 inline float __attribute__ ((always_inline, optimize("-O3")))
 get_average_atSettings (s_channelSettings *a, uint32_t timestamp)
 {
-  return faxplusb (
+  return faxplusbcs (
       get_average_from_buffer (a->buffer_ADC, a->max_N, timestamp, a->max_dt_ms,
 			       a->averaging_method, a->alpha, a->multiplicator),
       a);
