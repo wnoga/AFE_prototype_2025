@@ -352,9 +352,9 @@ machine_DAC_switch (uint8_t channel, uint8_t enable)
  * FIXME Create conversion from float to DAC uint16_t value
  */
 inline uint16_t __attribute ((always_inline, optimize("-O3")))
-machine_DAC_convert_mv_to_dac_value (float mV, s_regulatorSettings *regulatorSettings)
+machine_DAC_convert_V_to_DAC_value (float V, s_regulatorSettings *regulatorSettings)
 {
-  return faxplusb(mV, regulatorSettings->a, regulatorSettings->b);
+  return faxplusb(V, regulatorSettings->a_dac, regulatorSettings->b_dac);
 }
 
 /***
@@ -388,12 +388,12 @@ machine_main_init_0 (void)
 
   for (uint8_t i0 = 0; i0 < 2; ++i0)
     {
-      regulatorSettings[i0].a = AFE_REGULATOR_DEFAULT_a;
-      regulatorSettings[i0].T_0 = AFE_REGULATOR_DEFAULT_T0;
-      regulatorSettings[i0].b = AFE_REGULATOR_DEFAULT_U0;
-      regulatorSettings[i0].U_offset = AFE_REGULATOR_DEFAULT_U_offset; // Voltage offset
+      regulatorSettings[i0].dV_dT = AFE_REGULATOR_DEFAULT_dV_dT;
+      regulatorSettings[i0].T_opt = AFE_REGULATOR_DEFAULT_T0;
+      regulatorSettings[i0].V_opt = AFE_REGULATOR_DEFAULT_U0;
+      regulatorSettings[i0].V_offset = AFE_REGULATOR_DEFAULT_U_offset; // Voltage offset
       regulatorSettings[i0].dT = AFE_REGULATOR_DEFAULT_dT; // delta Temperature when new DAC value can be set
-      regulatorSettings[i0].T_old = regulatorSettings[i0].T_0;
+      regulatorSettings[i0].T_old = regulatorSettings[i0].T_opt;
       regulatorSettings[i0].enabled = 0;
       regulatorSettings[i0].ramp_bit_step = 1;
       regulatorSettings[i0].ramp_bit_step_every_ms = 100;
@@ -542,7 +542,7 @@ can_execute (const s_can_msg_recieved msg)
 //	  }
 //	break;
 //      }
-    case AFECommand_getSensorDataSi_all_periodic_average:
+    case AFECommand_getSensorDataSi_periodic:
       {
 #warning "Update this" // TODO Update this
 	break;
@@ -614,7 +614,7 @@ can_execute (const s_can_msg_recieved msg)
 
       /* 0xC0 */
       /* Temperature loop runtime */
-    case AFECommand_setTemperatureLoopForChannelState_byMask_asMask: // start or stop [Data[3] temperature loop for channel [Data[2]]
+    case AFECommand_setTemperatureLoopForChannelState_byMask_asStatus: // start or stop [Data[3] temperature loop for channel [Data[2]]
       {
 	uint8_t channels = msg.Data[2];
 	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
@@ -626,7 +626,7 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (channels & (1 << channel))
 	      {
-		regulatorSettings[channel].enabled = 0x01 & (status >> channel);
+		regulatorSettings[channel].enabled = status != 0 ? 1 : 0;
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
@@ -668,7 +668,7 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (subdevice_mask & (1 << subdev))
 	      {
-		uint16_t value = machine_DAC_convert_mv_to_dac_value (valueSi,
+		uint16_t value = machine_DAC_convert_V_to_DAC_value (valueSi,
 								      &regulatorSettings[subdev]);
 		switch (subdev)
 		  {
@@ -873,22 +873,22 @@ can_execute (const s_can_msg_recieved msg)
 	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setRegulator_a_byMask:
+    case AFECommand_setChannel_period_ms_byMask:
       {
-	uint8_t subdevMask = msg.Data[2];
+	uint8_t channelMask = msg.Data[2];
 	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
-	for (uint8_t subdev = 0; subdev < AFE_NUMBER_OF_SUBDEVICES; ++subdev)
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
-	    if (subdevMask & (1 << subdev))
+	    if (channelMask & (1 << channel))
 	      {
-		memcpy (&regulatorSettings[subdev].a, &msg.Data[3], sizeof(float));
+		memcpy (&channelSettings[channel].period_ms, &msg.Data[3], sizeof(float));
 	      }
 	  }
 	memcpy(&tmp.data[0],&msg.Data[0],msg.DLC);
 	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setRegulator_b_byMask:
+    case AFECommand_setRegulator_a_dac_byMask:
       {
 	uint8_t subdevMask = msg.Data[2];
 	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
@@ -896,14 +896,14 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (subdevMask & (1 << subdev))
 	      {
-		memcpy (&regulatorSettings[subdev].b, &msg.Data[3], sizeof(float));
+		memcpy (&regulatorSettings[subdev].a_dac, &msg.Data[3], sizeof(float));
 	      }
 	  }
 	memcpy(&tmp.data[0],&msg.Data[0],msg.DLC);
 	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
 	break;
       }
-    case AFECommand_setRegulator_U_offset_byMask:
+    case AFECommand_setRegulator_b_dac_byMask:
       {
 	uint8_t subdevMask = msg.Data[2];
 	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
@@ -911,7 +911,52 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (subdevMask & (1 << subdev))
 	      {
-		memcpy (&regulatorSettings[subdev].U_offset, &msg.Data[3], sizeof(float));
+		memcpy (&regulatorSettings[subdev].b_dac, &msg.Data[3], sizeof(float));
+	      }
+	  }
+	memcpy(&tmp.data[0],&msg.Data[0],msg.DLC);
+	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
+	break;
+      }
+    case AFECommand_setRegulator_dV_dT_byMask:
+      {
+	uint8_t subdevMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+	for (uint8_t subdev = 0; subdev < AFE_NUMBER_OF_SUBDEVICES; ++subdev)
+	  {
+	    if (subdevMask & (1 << subdev))
+	      {
+		memcpy (&regulatorSettings[subdev].dV_dT, &msg.Data[3], sizeof(float));
+	      }
+	  }
+	memcpy(&tmp.data[0],&msg.Data[0],msg.DLC);
+	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
+	break;
+      }
+    case AFECommand_setRegulator_V_opt_byMask:
+      {
+	uint8_t subdevMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+	for (uint8_t subdev = 0; subdev < AFE_NUMBER_OF_SUBDEVICES; ++subdev)
+	  {
+	    if (subdevMask & (1 << subdev))
+	      {
+		memcpy (&regulatorSettings[subdev].V_opt, &msg.Data[3], sizeof(float));
+	      }
+	  }
+	memcpy(&tmp.data[0],&msg.Data[0],msg.DLC);
+	CANCircularBuffer_enqueueMessage(&canTxBuffer, &tmp);
+	break;
+      }
+    case AFECommand_setRegulator_V_offset_byMask:
+      {
+	uint8_t subdevMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+	for (uint8_t subdev = 0; subdev < AFE_NUMBER_OF_SUBDEVICES; ++subdev)
+	  {
+	    if (subdevMask & (1 << subdev))
+	      {
+		memcpy (&regulatorSettings[subdev].V_offset, &msg.Data[3], sizeof(float));
 	      }
 	  }
 	memcpy(&tmp.data[0],&msg.Data[0],msg.DLC);
@@ -1039,9 +1084,8 @@ machine_control (void)
 	{
 	  float voltage_for_SiPM = get_voltage_for_SiPM_x (average_Temperature,
 							   regulatorSettings_ptr);
-	  regulatorSettings_ptr->T_old = average_Temperature;
 	  regulatorSettings_ptr->ramp_target_voltage_set_bits =
-	      machine_DAC_convert_mv_to_dac_value (voltage_for_SiPM, regulatorSettings_ptr);
+	      machine_DAC_convert_V_to_DAC_value (voltage_for_SiPM, regulatorSettings_ptr);
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
 	  if (regulatorSettings_ptr->ramp_target_voltage_set_bits
 	      != regulatorSettings_ptr->ramp_target_voltage_set_bits_old)
@@ -1077,6 +1121,7 @@ machine_control (void)
 	    }
 	  regulatorSettings_ptr->ramp_target_voltage_set_bits_old = regulatorSettings_ptr->ramp_target_voltage_set_bits;
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+	  regulatorSettings_ptr->T_old = average_Temperature;
 	}
 #endif // HARDWARE_CONTROL_TEMPERATURE_LOOP_DISABLED
 #if HARDWARE_CONTROL_TEMPERATURE_LOOP_RAMP_BIT_DISABLED
@@ -1167,24 +1212,27 @@ machine_periodic_report (void)
 	      ptr->period_ms_last = timestamp;
 	      CAN_Message_t tmp;
 	      tmp.id = CAN_ID_IN_MSG;
-	      tmp.data[0] = AFECommand_getSensorDataSi_all_periodic_average;
+	      tmp.data[0] = AFECommand_getSensorDataSi_periodic;
 	      tmp.timestamp = timestamp;
 	      uint8_t channel_mask = 1 << channel;
 	      s_ADC_Measurement adc_val;
-	      uint8_t total_msg_count = 3;
+	      uint8_t total_msg_count = 4;
 
 	      /* Get last data */
 	      get_n_latest_from_buffer (channelSettings[channel].buffer_ADC, 1, &adc_val);
 	      adc_value_real = faxplusbcs (adc_val.adc_value, &channelSettings[channel]);
-	      CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 1, total_msg_count,
+	      CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 0, total_msg_count,
 							   channel_mask, &adc_value_real);
+	      /* Add last data timestamp */
+	      CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1, total_msg_count,
+							     adc_val.timestamp_ms);
 	      /* Get average data */
 	      adc_value_real = get_average_atSettings (ptr, timestamp);
 	      CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 2, total_msg_count,
 							   channel_mask, &adc_value_real);
-	      /* Add timestamp */
-	      CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 2, total_msg_count,
-							     tmp.timestamp);
+	      /* Add calculation timestamp */
+	      CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 3, total_msg_count,
+							     timestamp);
 	    }
 	}
     }

@@ -16,7 +16,7 @@
 #define AFE_DAC_MAX 0xFFF
 #define AFE_DAC_START 0xFFF
 
-#define AFE_REGULATOR_DEFAULT_a 0.05
+#define AFE_REGULATOR_DEFAULT_dV_dT 0.05
 #define AFE_REGULATOR_DEFAULT_T0 25.0
 #define AFE_REGULATOR_DEFAULT_U0 55.0
 #define AFE_REGULATOR_DEFAULT_U_offset 0.0
@@ -40,7 +40,7 @@ typedef enum
   AFECommand_getSensorDataSi_average_byMask = 0x31,
 
 //  AFECommand_getSensorDataSiAndTimestamp_average_byMask = 0x3B,
-  AFECommand_getSensorDataSi_all_periodic_average = 0x3F,
+  AFECommand_getSensorDataSi_periodic = 0x3F,
 
   AFECommand_setSensorDataSi_periodic_last = 0x40,
   AFECommand_setSensorDataSiAndTimestamp_periodic_last = 0x41,
@@ -51,7 +51,7 @@ typedef enum
   AFECommand_setAD8402Value_byte_byMask = 0xA1,
   AFECommand_writeGPIO = 0xA2,
 
-  AFECommand_setTemperatureLoopForChannelState_byMask_asMask = 0xC1,
+  AFECommand_setTemperatureLoopForChannelState_byMask_asStatus = 0xC1,
   AFECommand_setDACValueRaw_bySubdeviceMask = 0xC2,
   AFECommand_setDACValueSi_bySubdeviceMask = 0xC3,
   AFECommand_stopTemperatureLoopForAllChannels = 0xC4,
@@ -67,10 +67,13 @@ typedef enum
   AFECommand_setAveragingSubdevice = 0xD6,
   AFECommand_setChannel_a_byMask = 0xD7,
   AFECommand_setChannel_b_byMask = 0xD8,
+  AFECommand_setChannel_period_ms_byMask = 0xD9,
 
-  AFECommand_setRegulator_a_byMask = 0xE7,
-  AFECommand_setRegulator_b_byMask = 0xE8,
-  AFECommand_setRegulator_U_offset_byMask = 0xE9,
+  AFECommand_setRegulator_a_dac_byMask = 0xE5,
+  AFECommand_setRegulator_b_dac_byMask = 0xE6,
+  AFECommand_setRegulator_dV_dT_byMask = 0xE7,
+  AFECommand_setRegulator_V_opt_byMask = 0xE8,
+  AFECommand_setRegulator_V_offset_byMask = 0xE9,
 
   AFECommand_debug_machine_control = 0xF1
 } AFECommand;
@@ -156,15 +159,19 @@ typedef struct __attribute__((packed))
   e_subdevice subdevice;
   s_channelSettings *temperature_channelSettings_ptr;
   /* Temperature loop parameters */
+  /* From TempLoop.csv */
   float dT; // [deg C] minimum temperature change to drive ADC
   /* a*(T-T_0)+U_0+U_offset */
-  float a; // [V/deg T]
-  float b; // U_0 [V]
-  float T_0; // [deg C]
-  float U_offset; // [V]
+  float dV_dT; // [V/deg C]
+  float V_opt; // U_0 [V]
+  float T_opt; // [deg C]
+  float V_offset; // [V] (default 0), not from config file
   /* Old temperature value */
   float T_old;
   int8_t enabled;
+
+  float a_dac; // convert Volts to DAC in faxplusb
+  float b_dac; // convert Voolts to DAC in faxplusb
 
   uint16_t ramp_bit_step;
   uint32_t ramp_bit_step_every_ms;

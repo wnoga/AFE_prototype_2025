@@ -25,8 +25,8 @@ get_voltage_for_SiPM (float T, float a, float T_0, float U_0, float U_cor)
 inline float __attribute__ ((always_inline, optimize("-O3")))
 get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings)
 {
-  return get_voltage_for_SiPM (T, regulatorSettings->a, regulatorSettings->T_0,
-			       regulatorSettings->b, regulatorSettings->U_offset);
+  return get_voltage_for_SiPM (T, regulatorSettings->dV_dT, regulatorSettings->T_opt,
+			       regulatorSettings->V_opt, regulatorSettings->V_offset);
 }
 
 /* COMPUTE FUNCTIONS */
