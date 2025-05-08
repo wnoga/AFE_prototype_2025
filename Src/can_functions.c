@@ -12,6 +12,10 @@
 #include <stm32f0xx_hal_gpio.h>
 #include <string.h>
 
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+extern uint32_t main_machine_soft_watchdog_timestamp_ms;
+#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+
 extern CAN_HandleTypeDef hcan;
 static CanTxMsgTypeDef CanTxBuffer;
 static CanRxMsgTypeDef CanRxBuffer;
@@ -384,6 +388,7 @@ can_machine (void)
 	  RESET_WINDOW_WATCHDOG,
 	  RESET_LOW_POWER
 	} ResetReason_t;
+  
 	tmp.timestamp = HAL_GetTick ();
 	tmp.id = msg_id;
 	tmp.data[0] = command; // Standard reply [function]
@@ -457,6 +462,9 @@ HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
     {
       can_msg_received.DLC = hcan->pRxMsg->DLC;
       can_msg_received.timestamp = HAL_GetTick ();
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+      main_machine_soft_watchdog_timestamp_ms = can_msg_received.timestamp;
+#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
       memcpy (&can_msg_received.Data[0], &hcan->pRxMsg->Data[0], hcan->pRxMsg->DLC);
       canRxFlag = 1;
     }

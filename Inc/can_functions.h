@@ -30,6 +30,13 @@ extern uint32_t UID[];
 #define CAN_MSG_RECIEVED_TIMEOUT_MS 3000
 #define CAN_MSG_BURST_DELAY_MS 100
 
+#define WATCHDOG_FOR_CAN_RECIEVER_ENABLED 0
+
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+uint32_t main_machine_soft_watchdog_timestamp_ms = 0;
+const uint32_t main_machine_soft_watchdog_timeout_ms = 10*60*1000;
+#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+
 #if CAN_BUFFER_SIZE <= 0xFF
 typedef uint8_t can_bs_t;
 #elif CAN_BUFFER_SIZE <= 0xFFFF

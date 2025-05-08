@@ -1259,11 +1259,20 @@ machine_main (void)
 	  {
 	    adc_dma_buffer[i0] = 0;
 	  }
-
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+	main_machine_soft_watchdog_timestamp_ms = HAL_GetTick();
+#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	break;
       }
     case e_machine_main_idle:
       {
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+	if ((HAL_GetTick () - main_machine_soft_watchdog_timestamp_ms)
+	    > main_machine_soft_watchdog_timeout_ms)
+	  {
+	    NVIC_SystemReset (); // Reset if no respond
+	  }
+#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	/* Update CAN machine */
 	can_machine ();
 	/* Check if any new CAN message received */
