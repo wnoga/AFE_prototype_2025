@@ -23,6 +23,8 @@
 #define HARDWARE_CONTROL_SPI_DISABLED 0
 #define HARDWARE_CONTROL_GPIO_DISABLED 0
 
+#define USE_SMALLER_STEPS_NEAR_DAC_TARGET 1
+
 void machine_main_init_0 (void);
 void machine_main (void);
 
