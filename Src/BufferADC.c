@@ -37,6 +37,11 @@ init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uin
   cb->dt_ms = dt_ms;
   cb->buffer[0].timestamp_ms = 0;
   cb->buffer[0].adc_value = 0;
+#if USE_STACK_FOR_BUFFER
+  free(cb->buffer);
+  cb->buffer = malloc(buffer_size * sizeof(s_ADC_Measurement));
+#else
+#endif
   memset (cb->buffer, 0, buffer_size * sizeof(s_ADC_Measurement));
 }
 

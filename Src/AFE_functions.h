@@ -8,10 +8,11 @@
 #ifndef AFE_FUNCTIONS_H_
 #define AFE_FUNCTIONS_H_
 
+#define USE_STACK_FOR_BUFFER 0
 #define ADC_MEASUREMENT_RAW_SIZE_MAX 256
 #define AFE_NUMBER_OF_CHANNELS 8
 #define AFE_NUMBER_OF_SUBDEVICES 2
-#define ADC_MEASUREMENT_RAW_DEFAULT_DT_MS 100
+#define ADC_MEASUREMENT_RAW_DEFAULT_DT_MS 1000
 
 #define AFE_DAC_MAX 0xFFF
 #define AFE_DAC_START 0xFFF
@@ -37,6 +38,7 @@ typedef enum
   AFECommand_getVersion = 0x01,
   AFECommand_resetAll = 0x03,
   AFECommand_startADC = 0x04,
+  AFECommand_getTimestamp = 0x05,
 
   AFECommand_getSensorDataSi_last_byMask = 0x30,
   AFECommand_getSensorDataSi_average_byMask = 0x31,
@@ -52,6 +54,8 @@ typedef enum
   AFECommand_transmitSPIData = 0xA0,
   AFECommand_setAD8402Value_byte_byMask = 0xA1,
   AFECommand_writeGPIO = 0xA2,
+  AFECommand_setCanMsgBurstDelay_ms = 0xA3,
+  AFECommand_setAfe_can_watchdog_timeout_ms = 0xA4,
 
   AFECommand_setTemperatureLoopForChannelState_byMask_asStatus = 0xC1,
   AFECommand_setDACValueRaw_bySubdeviceMask = 0xC2,
@@ -70,6 +74,8 @@ typedef enum
   AFECommand_setChannel_a_byMask = 0xD7,
   AFECommand_setChannel_b_byMask = 0xD8,
   AFECommand_setChannel_period_ms_byMask = 0xD9,
+
+  AFECommand_setChannelBufferSize = 0xE0,
 
   AFECommand_setRegulator_a_dac_byMask = 0xE5,
   AFECommand_setRegulator_b_dac_byMask = 0xE6,

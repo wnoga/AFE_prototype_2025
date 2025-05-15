@@ -25,16 +25,18 @@ extern const uint8_t verArr[];
 extern const size_t verArrLen;
 extern uint32_t UID[];
 
-#define CAN_MSG_LIFETIME_MS 5000
+#define CAN_MSG_LIFETIME_MS 10000
 #define CAN_BUFFER_SIZE 64
-#define CAN_MSG_RECIEVED_TIMEOUT_MS 3000
-#define CAN_MSG_BURST_DELAY_MS 100
+#define CAN_MSG_RECIEVED_TIMEOUT_MS 5000
+#define USE_CAN_MSG_BURST_DELAY_MS 1
 
-#define WATCHDOG_FOR_CAN_RECIEVER_ENABLED 0
+extern uint32_t canMsgBurstDelay_ms;
+
+#define WATCHDOG_FOR_CAN_RECIEVER_ENABLED 1
 
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-uint32_t main_machine_soft_watchdog_timestamp_ms = 0;
-const uint32_t main_machine_soft_watchdog_timeout_ms = 10*60*1000;
+extern uint32_t afe_can_watchdog_timestamp_ms;
+extern uint32_t afe_can_watchdog_timeout_ms;
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 
 #if CAN_BUFFER_SIZE <= 0xFF

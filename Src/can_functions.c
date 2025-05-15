@@ -13,8 +13,13 @@
 #include <string.h>
 
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-extern uint32_t main_machine_soft_watchdog_timestamp_ms;
+uint32_t afe_can_watchdog_timestamp_ms = 0;
+uint32_t afe_can_watchdog_timeout_ms = 30*1000;
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+
+#if USE_CAN_MSG_BURST_DELAY_MS
+uint32_t canMsgBurstDelay_ms = 100;
+#endif
 
 extern CAN_HandleTypeDef hcan;
 static CanTxMsgTypeDef CanTxBuffer;
@@ -43,16 +48,16 @@ blink1 (void)
 //    }
 }
 
-void
-nice (void)
-{
-  for (size_t _ = 0; _ < 7; ++_)
-    {
-      blink1 ();
-      HAL_Delay (25);
-    }
-  HAL_GPIO_WritePin (GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
-}
+//void
+//nice (void)
+//{
+//  for (size_t _ = 0; _ < 7; ++_)
+//    {
+//      blink1 ();
+//      HAL_Delay (25);
+//    }
+//  HAL_GPIO_WritePin (GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+//}
 
 GPIO_TypeDef*
 GetGPIOPortByEnumerator (uint8_t enumerator)
@@ -269,8 +274,8 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 	}
       if (canState == e_CANMachineState_IDLE)
 	{
-#if CAN_MSG_BURST_DELAY_MS
-	  if ((HAL_GetTick () - canTxLast_ms) > CAN_MSG_BURST_DELAY_MS)
+#if USE_CAN_MSG_BURST_DELAY_MS
+	  if ((HAL_GetTick () - canTxLast_ms) > canMsgBurstDelay_ms)
 	    {
 #endif // CAN_MSG_BURST_DELAY_MS
 	      canTxLast_ms = HAL_GetTick ();
@@ -284,7 +289,7 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 		  canState = e_CANMachineState_SENDING; // Set state to sending
 		  return;
 		}
-#if CAN_MSG_BURST_DELAY_MS
+#if USE_CAN_MSG_BURST_DELAY_MS
 	    }
 	  else
 	    {
@@ -398,11 +403,20 @@ can_machine (void)
 	__DSB ();  // Ensure the flag is cleared before continuing execution
 	tmp.dlc = 3;
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
-
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+	afe_can_watchdog_timestamp_ms = HAL_GetTick();
+#endif
 	break;
       }
     case e_can_machine_state_idle:
       {
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+	if ((HAL_GetTick () - afe_can_watchdog_timestamp_ms)
+	    > afe_can_watchdog_timeout_ms)
+	  {
+	    NVIC_SystemReset (); // Reset if no respond
+	  }
+#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	CAN_TransmitHandler (&hcan);
 	break;
       }
@@ -463,7 +477,7 @@ HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
       can_msg_received.DLC = hcan->pRxMsg->DLC;
       can_msg_received.timestamp = HAL_GetTick ();
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-      main_machine_soft_watchdog_timestamp_ms = can_msg_received.timestamp;
+      afe_can_watchdog_timestamp_ms = can_msg_received.timestamp;
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
       memcpy (&can_msg_received.Data[0], &hcan->pRxMsg->Data[0], hcan->pRxMsg->DLC);
       canRxFlag = 1;

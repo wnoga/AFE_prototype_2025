@@ -13,7 +13,11 @@
 
 extern uint16_t adc_dma_buffer[];
 uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
+#if USE_STACK_FOR_BUFFER
+s_ADC_Measurement *adc_measurement_raw[AFE_NUMBER_OF_CHANNELS];
+#else
 s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
+#endif
 
 //PA0     ------> ADC_IN0
 //PA1     ------> ADC_IN1
@@ -58,11 +62,22 @@ int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
 int8_t machine_temperatureLoop_enabled[2];
 
 void
-update_buffer_by_channelSettings (s_channelSettings *averagingSettings)
+update_buffer_by_channelSettings (s_channelSettings *channelSettings)
 {
-  averagingSettings->buffer_ADC->tail = averagingSettings->buffer_ADC->head = 0;
+  channelSettings->buffer_ADC->tail = channelSettings->buffer_ADC->head = 0;
 }
 
+#if USE_STACK_FOR_BUFFER
+void
+change_buffer_size_by_channelSettings (s_channelSettings *channelSettings, size_t new_buffer_size)
+{
+  channelSettings->buffer_ADC->buffer_size = new_buffer_size;
+  uint32_t tmp = channelSettings->period_ms; // Temporary disable writing to this memory
+  channelSettings->period_ms = 0;
+  realloc(channelSettings->buffer_ADC->buffer,new_buffer_size);
+  channelSettings->period_ms = tmp;
+}
+#endif // USE_STACK_FOR_BUFFER
 /***
  * tmp->data[0] and tmp->data[1] should be set before this function
  */
@@ -395,7 +410,11 @@ machine_main_init_0 (void)
       afe_regulatorSettings[i0].dT = AFE_REGULATOR_DEFAULT_dT; // delta Temperature when new DAC value can be set
       afe_regulatorSettings[i0].T_old = afe_regulatorSettings[i0].T_opt;
       afe_regulatorSettings[i0].enabled = 0;
+#if USE_SMALLER_STEPS_NEAR_DAC_TARGET
+      afe_regulatorSettings[i0].ramp_bit_step = 100;
+#else
       afe_regulatorSettings[i0].ramp_bit_step = 1;
+#endif
       afe_regulatorSettings[i0].ramp_bit_step_every_ms = 100;
       afe_regulatorSettings[i0].ramp_bit_step_timestamp_old_ms = 0;
       afe_regulatorSettings[i0].ramp_curent_voltage_set_bits = AFE_DAC_START;
@@ -479,6 +498,12 @@ can_execute (const s_can_msg_recieved msg)
 	tmp.data[4] = 0x00;	   // Error
 	tmp.dlc = 5;
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
+
+    case AFECommand_getTimestamp:
+      {
+	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 0, 1, HAL_GetTick ());
 	break;
       }
 
@@ -614,6 +639,22 @@ can_execute (const s_can_msg_recieved msg)
 	tmp.data[4] = msg.Data[4];
 	tmp.dlc = 5;
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
+
+    case AFECommand_setCanMsgBurstDelay_ms:
+      {
+	tmp.data[1] = get_byte_of_message_number (0, 1);
+	memcpy (&canMsgBurstDelay_ms, &msg.Data[3], sizeof(uint32_t));
+	CANCircularBuffer_enqueueMessage_data(&canTxBuffer, &tmp, 0, 1, 0x00, (uint8_t*)&canMsgBurstDelay_ms, sizeof(uint32_t));
+	break;
+      }
+
+    case AFECommand_setAfe_can_watchdog_timeout_ms:
+      {
+	tmp.data[1] = get_byte_of_message_number (0, 1);
+	memcpy (&afe_can_watchdog_timeout_ms, &msg.Data[3], sizeof(uint32_t));
+	CANCircularBuffer_enqueueMessage_data(&canTxBuffer, &tmp, 0, 1, 0x00, (uint8_t*)&afe_can_watchdog_timeout_ms, sizeof(uint32_t));
 	break;
       }
 
@@ -893,6 +934,23 @@ can_execute (const s_can_msg_recieved msg)
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
 	break;
       }
+    case AFECommand_setChannelBufferSize:
+      {
+	uint8_t channelMask = msg.Data[2];
+	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
+	  {
+	    if (channelMask & (1 << channel))
+	      {
+		memcpy (&afe_channelSettings[channel].buffer_ADC->buffer_size, &msg.Data[3], sizeof(float));
+		update_buffer_by_channelSettings(&afe_channelSettings[channel]);
+	      }
+	  }
+	memcpy (&tmp.data[0], &msg.Data[0], msg.DLC);
+	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	break;
+      }
+
     case AFECommand_setRegulator_a_dac_byMask:
       {
 	uint8_t subdevMask = msg.Data[2];
@@ -1237,7 +1295,7 @@ machine_periodic_report (void)
 	      tmp.timestamp = timestamp;
 	      uint8_t channel_mask = 1 << channel;
 	      s_ADC_Measurement adc_val;
-	      uint8_t total_msg_count = 4;
+	      const uint8_t total_msg_count = 4;
 
 	      /* Get last data */
 	      get_n_latest_from_buffer (afe_channelSettings[channel].buffer_ADC, 1, &adc_val);
@@ -1271,29 +1329,25 @@ machine_main (void)
 	machine_main_status = e_machine_main_idle;
 	modify_aurt_as_test_led ();
 
-	for (uint8_t i0 = 0; i0 < 2; ++i0)
-	  {
-	    HAL_Delay (50);
+	const uint32_t dd = 25;
 	    blink1 ();
-	  }
+	    HAL_Delay (dd);
+	    blink1 ();
+	    HAL_Delay (dd);
+	    blink1 ();
+	    HAL_Delay (dd);
+	    blink1 ();
 	for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
 	  {
 	    adc_dma_buffer[i0] = 0;
 	  }
-#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-	main_machine_soft_watchdog_timestamp_ms = HAL_GetTick();
-#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+//#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+//	main_machine_soft_watchdog_timestamp_ms = HAL_GetTick();
+//#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	break;
       }
     case e_machine_main_idle:
       {
-#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-	if ((HAL_GetTick () - main_machine_soft_watchdog_timestamp_ms)
-	    > main_machine_soft_watchdog_timeout_ms)
-	  {
-	    NVIC_SystemReset (); // Reset if no respond
-	  }
-#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	/* Update CAN machine */
 	can_machine ();
 	/* Check if any new CAN message received */

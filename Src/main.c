@@ -595,7 +595,7 @@ void _Error_Handler(char *file, int line)
   /* USER CODE BEGIN Error_Handler_Debug */
   for (uint8_t i0 = 0; i0 < 40; ++i0)
     {
-      HAL_Delay (50);
+      _delay(50);
       blink1 ();
     }
   /* User can add his own implementation to report the HAL error return state */
