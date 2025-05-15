@@ -1288,7 +1288,6 @@ machine_periodic_report (void)
 	  if ((timestamp - ptr->period_ms_last) >= ptr->period_ms)
 	    {
 	      float adc_value_real = 0.0;
-	      ptr->period_ms_last = timestamp;
 	      CAN_Message_t tmp;
 	      tmp.id = CAN_ID_IN_MSG;
 	      tmp.data[0] = AFECommand_getSensorDataSi_periodic;
@@ -1298,20 +1297,27 @@ machine_periodic_report (void)
 	      const uint8_t total_msg_count = 4;
 
 	      /* Get last data */
-	      get_n_latest_from_buffer (afe_channelSettings[channel].buffer_ADC, 1, &adc_val);
-	      adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
-	      CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 0, total_msg_count,
-							   channel_mask, &adc_value_real);
-	      /* Add last data timestamp */
-	      CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1, total_msg_count,
-							     adc_val.timestamp_ms);
-	      /* Get average data */
-	      adc_value_real = get_average_atSettings (ptr, timestamp);
-	      CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 2, total_msg_count,
-							   channel_mask, &adc_value_real);
-	      /* Add calculation timestamp */
-	      CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 3, total_msg_count,
-							     timestamp);
+	      if (get_n_latest_from_buffer (afe_channelSettings[channel].buffer_ADC, 1, &adc_val))
+		{
+		  adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
+		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 0,
+							       total_msg_count, channel_mask,
+							       &adc_value_real);
+		  /* Add last data timestamp */
+		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1,
+								 total_msg_count,
+								 adc_val.timestamp_ms);
+		  /* Get average data */
+		  adc_value_real = get_average_atSettings (ptr, timestamp);
+		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 2,
+							       total_msg_count, channel_mask,
+							       &adc_value_real);
+		  /* Add calculation timestamp */
+		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 3,
+								 total_msg_count, timestamp);
+
+		  ptr->period_ms_last = timestamp;
+		}
 	    }
 	}
     }
