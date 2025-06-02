@@ -39,6 +39,7 @@ typedef enum
   AFECommand_resetAll = 0x03,
   AFECommand_startADC = 0x04,
   AFECommand_getTimestamp = 0x05,
+  AFECommand_getSyncTimestamp = 0x06,
 
   AFECommand_getSensorDataSi_last_byMask = 0x30,
   AFECommand_getSensorDataSi_average_byMask = 0x31,

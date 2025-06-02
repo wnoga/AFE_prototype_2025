@@ -503,7 +503,16 @@ can_execute (const s_can_msg_recieved msg)
 
     case AFECommand_getTimestamp:
       {
-	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 0, 1, HAL_GetTick ());
+	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 0, 1, 0x00, HAL_GetTick ());
+	break;
+      }
+
+    case AFECommand_getSyncTimestamp:
+      {
+	/* timestamp */
+	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 0, 2, 0x00, HAL_GetTick ());
+	/* recieved timestamp */
+	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1, 2, 0x00, msg.timestamp);
 	break;
       }
 
@@ -529,7 +538,8 @@ can_execute (const s_can_msg_recieved msg)
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
-						       total_msg_count, tmp.timestamp);
+						       total_msg_count, 0,
+						       tmp.timestamp);
 	break;
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]  */
@@ -552,7 +562,7 @@ can_execute (const s_can_msg_recieved msg)
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
-						       total_msg_count, tmp.timestamp);
+						       total_msg_count, 0x00, tmp.timestamp);
 	break;
       }
 //      /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]
@@ -1083,7 +1093,7 @@ can_execute (const s_can_msg_recieved msg)
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
-						       total_msg_count, tmp.timestamp);
+						       total_msg_count, 0x00, tmp.timestamp);
 	break;
       }
     default:
@@ -1159,29 +1169,13 @@ machine_control (void)
 	      tmp.timestamp = HAL_GetTick (); // for timeout
 	      tmp.data[0] = AFECommand_debug_machine_control;
 	      // Voltage
-	      tmp.data[1] = get_byte_of_message_number (0, 4);
-	      tmp.data[2] = subdev;
-	      tmp.dlc = 2 + 1 + sizeof(float);
-	      memcpy (&tmp.data[3], &voltage_for_SiPM, sizeof(float));
-	      CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	      CANCircularBuffer_enqueueMessage_data_float(&canTxBuffer, &tmp, 0, 4, subdev, &voltage_for_SiPM);
 	      // Average temperature
-	      tmp.data[1] = get_byte_of_message_number (1, 4);
-	      tmp.data[2] = subdev;
-	      tmp.dlc = 2 + 1 + sizeof(float);
-	      memcpy (&tmp.data[3], &average_Temperature, sizeof(float));
-	      CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	      CANCircularBuffer_enqueueMessage_data_float(&canTxBuffer, &tmp, 1, 4, subdev, &average_Temperature);
 	      // Old temperature
-	      tmp.data[1] = get_byte_of_message_number (2, 4);
-	      tmp.data[2] = subdev;
-	      tmp.dlc = 2 + 1 + sizeof(float);
-	      memcpy (&tmp.data[3], &regulatorSettings_ptr->T_old, sizeof(float));
-	      CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	      CANCircularBuffer_enqueueMessage_data_float(&canTxBuffer, &tmp, 2, 4, subdev, &regulatorSettings_ptr->T_old);
 	      // Timestamp
-	      tmp.data[1] = get_byte_of_message_number (3, 4);
-	      tmp.data[2] = subdev;
-	      tmp.dlc = 2 + 1 + sizeof(uint32_t);
-	      memcpy (&tmp.data[3], &timestamp_ms, sizeof(uint32_t));
-	      CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	      CANCircularBuffer_enqueueMessage_timestamp_ms(&canTxBuffer, &tmp, 3, 4, 0x00, timestamp_ms);
 	    }
 	  regulatorSettings_ptr->ramp_target_voltage_set_bits_old =
 	      regulatorSettings_ptr->ramp_target_voltage_set_bits;
@@ -1305,7 +1299,7 @@ machine_periodic_report (void)
 							       &adc_value_real);
 		  /* Add last data timestamp */
 		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1,
-								 total_msg_count,
+								 total_msg_count, 0x00,
 								 adc_val.timestamp_ms);
 		  /* Get average data */
 		  adc_value_real = get_average_atSettings (ptr, timestamp);
@@ -1314,7 +1308,7 @@ machine_periodic_report (void)
 							       &adc_value_real);
 		  /* Add calculation timestamp */
 		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 3,
-								 total_msg_count, timestamp);
+								 total_msg_count, 0x00, timestamp);
 
 		  ptr->period_ms_last = timestamp;
 		}

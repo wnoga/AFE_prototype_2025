@@ -460,10 +460,11 @@ CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Messag
 void
 CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
 					       uint8_t msg_index, uint8_t total_msg_count,
+					       uint8_t channel_mask,
 					       uint32_t timestamp_ms)
 {
   tmp->data[1] = get_byte_of_message_number (msg_index, total_msg_count);
-  tmp->data[2] = 0;
+  tmp->data[2] = channel_mask;
   tmp->dlc = 2 + 1 + sizeof(uint32_t);
   memcpy (&tmp->data[3], &timestamp_ms, sizeof(uint32_t));
   CANCircularBuffer_enqueueMessage (cb, tmp);
