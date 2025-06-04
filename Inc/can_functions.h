@@ -19,10 +19,11 @@ extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_adc;
 
-//#define CAN_ID 35
-#ifndef AFE_CAN_ID
-#error "Define AFE_CAN_ID"
+#if HEADLESS_AFE_CAN_ID
+#else
+#define AFE_CAN_ID 35
 #endif
+
 #define CAN_ID_IN_MSG ((1<<10) | (AFE_CAN_ID << 2))
 extern const uint8_t verArr[];
 extern const size_t verArrLen;
