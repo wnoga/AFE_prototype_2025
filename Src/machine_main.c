@@ -525,6 +525,7 @@ can_execute (const s_can_msg_recieved msg)
 	float adc_value_real;
 	uint8_t total_msg_count = get_number_of_channels (channels) + 1; // Channels + timestamp
 	uint8_t msg_index = 0;
+	uint8_t forThisChannels = 0x00;
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channels & (1 << channel)) // loop over channel mask
@@ -534,11 +535,12 @@ can_execute (const s_can_msg_recieved msg)
 		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
 							     total_msg_count, 1 << channel,
 							     &adc_value_real);
+		forThisChannels |= (1 << channel);
 		++msg_index;
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
-						       total_msg_count, 0,
+						       total_msg_count, forThisChannels,
 						       tmp.timestamp);
 	break;
       }
@@ -549,6 +551,7 @@ can_execute (const s_can_msg_recieved msg)
 	float adc_value_real;
 	uint8_t total_msg_count = get_number_of_channels (channels) + 1;
 	uint8_t msg_index = 0;
+	uint8_t forThisChannels = 0x00;
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channels & (1 << channel)) // loop over channel mask
@@ -558,11 +561,12 @@ can_execute (const s_can_msg_recieved msg)
 		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
 							     total_msg_count, 1 << channel,
 							     &adc_value_real);
+		forThisChannels |= (1 << channel);
 		++msg_index;
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
-						       total_msg_count, 0x00, tmp.timestamp);
+						       total_msg_count, forThisChannels, tmp.timestamp);
 	break;
       }
 //      /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]
@@ -1074,6 +1078,7 @@ can_execute (const s_can_msg_recieved msg)
 	float adc_value_real;
 	uint8_t total_msg_count = get_number_of_channels (channels) + 1; // Channels + timestamp
 	uint8_t msg_index = 0;
+	uint8_t forThisChannels = 0x00;
 	for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
 	  {
 	    if (channels & (1 << channel)) // loop over channel mask
@@ -1089,11 +1094,12 @@ can_execute (const s_can_msg_recieved msg)
 		CANCircularBuffer_enqueueMessage_data (&canTxBuffer, &tmp, msg_index,
 						       total_msg_count, 1 << channel,
 						       (uint8_t*) &adc_value_real, sizeof(float));
+		forThisChannels |= (1 << channel);
 		++msg_index;
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
-						       total_msg_count, 0x00, tmp.timestamp);
+						       total_msg_count, forThisChannels, tmp.timestamp);
 	break;
       }
     default:
@@ -1175,7 +1181,7 @@ machine_control (void)
 	      // Old temperature
 	      CANCircularBuffer_enqueueMessage_data_float(&canTxBuffer, &tmp, 2, 4, subdev, &regulatorSettings_ptr->T_old);
 	      // Timestamp
-	      CANCircularBuffer_enqueueMessage_timestamp_ms(&canTxBuffer, &tmp, 3, 4, 0x00, timestamp_ms);
+	      CANCircularBuffer_enqueueMessage_timestamp_ms(&canTxBuffer, &tmp, 3, 4, subdev, timestamp_ms);
 	    }
 	  regulatorSettings_ptr->ramp_target_voltage_set_bits_old =
 	      regulatorSettings_ptr->ramp_target_voltage_set_bits;
@@ -1299,7 +1305,7 @@ machine_periodic_report (void)
 							       &adc_value_real);
 		  /* Add last data timestamp */
 		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1,
-								 total_msg_count, 0x00,
+								 total_msg_count, channel_mask,
 								 adc_val.timestamp_ms);
 		  /* Get average data */
 		  adc_value_real = get_average_atSettings (ptr, timestamp);
@@ -1308,7 +1314,7 @@ machine_periodic_report (void)
 							       &adc_value_real);
 		  /* Add calculation timestamp */
 		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 3,
-								 total_msg_count, 0x00, timestamp);
+								 total_msg_count, channel_mask, timestamp);
 
 		  ptr->period_ms_last = timestamp;
 		}
