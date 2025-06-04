@@ -473,7 +473,7 @@ CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN_Mess
 void __attribute__ ((optimize("-O3")))
 HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
 {
-  if (is_this_msg_for_me (hcan->pRxMsg, CAN_ID) && (hcan->pRxMsg->DLC <= 8))
+  if (is_this_msg_for_me (hcan->pRxMsg, AFE_CAN_ID) && (hcan->pRxMsg->DLC <= 8))
     {
       can_msg_received.DLC = hcan->pRxMsg->DLC;
       can_msg_received.timestamp = HAL_GetTick ();

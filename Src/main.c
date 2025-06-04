@@ -281,7 +281,7 @@ static void MX_CAN_Init(void)
       Error_Handler();
     }
 
-  if (configure_can_filter (&hcan, CAN_ID) != HAL_OK)
+  if (configure_can_filter (&hcan, AFE_CAN_ID) != HAL_OK)
     {
       Error_Handler();
     }
