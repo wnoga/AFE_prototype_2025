@@ -21,7 +21,7 @@ extern DMA_HandleTypeDef hdma_adc;
 
 #if HEADLESS_AFE_CAN_ID
 #else
-#define AFE_CAN_ID 35
+#define AFE_CAN_ID 36
 #endif
 
 #define CAN_ID_IN_MSG ((1<<10) | (AFE_CAN_ID << 2))
