@@ -387,6 +387,7 @@ can_machine_init_0 (void)
   hcan.pRxMsg = &CanRxBuffer;
 }
 
+uint8_t can_machine_inited_0 = 0;
 void
 can_machine (void)
 {
@@ -407,8 +408,8 @@ can_machine (void)
 
 	StartCan ();
 	CAN_Message_t tmp;
-	uint8_t command = AFECommand_resetAll;
-	uint32_t msg_id = CAN_ID_IN_MSG;
+	// uint8_t command = AFECommand_resetAll;
+	// uint32_t msg_id = CAN_ID_IN_MSG;
 	typedef enum
 	{
 	  RESET_UNKNOWN = 0,
@@ -421,15 +422,25 @@ can_machine (void)
 	  RESET_LOW_POWER
 	} ResetReason_t;
   
-	tmp.timestamp = HAL_GetTick ();
-	tmp.id = msg_id;
-	tmp.data[0] = command; // Standard reply [function]
-	tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
-	tmp.data[2] = RCC->CSR;
-	RCC->CSR |= RCC_CSR_RMVF;  // Set the RMVF bit to clear all reset flags
-	__DSB ();  // Ensure the flag is cleared before continuing execution
-	tmp.dlc = 3;
-	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+  uint32_t timestamp_ms = HAL_GetTick ();
+  tmp.timestamp = timestamp_ms;
+  tmp.id = CAN_ID_IN_MSG;
+  if (can_machine_inited_0)
+  {
+    tmp.data[0] = AFECommand_resetCAN;
+    CANCircularBuffer_enqueueMessage_data(&canTxBuffer, &tmp, 0, 1, 0x00, (uint8_t*)&timestamp_ms, sizeof(uint32_t));
+  }
+  else
+  {
+    tmp.data[0] = AFECommand_resetAll; // Standard reply [function]
+    tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+    tmp.data[2] = RCC->CSR;
+    RCC->CSR |= RCC_CSR_RMVF;  // Set the RMVF bit to clear all reset flags
+    __DSB ();  // Ensure the flag is cleared before continuing execution
+    tmp.dlc = 3;
+    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+    can_machine_inited_0 = 1;
+  }
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	afe_can_watchdog_timestamp_ms = HAL_GetTick();
 #endif
@@ -444,6 +455,10 @@ can_machine (void)
 	    NVIC_SystemReset (); // Reset if no respond
 	  }
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+	if (canState == e_CANMachineState_ERROR) {
+	  // NVIC_SystemReset (); // Reset if CAN error
+    canState = e_can_machine_state_init;
+	}
 	CAN_TransmitHandler (&hcan);
 	break;
       }

@@ -108,4 +108,6 @@ void CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN
 void _delay (size_t ms);
 void blink1 (void);
 
+extern uint8_t can_machine_inited_0;
+
 #endif /* CAN_FUNCTIONS_H_ */

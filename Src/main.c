@@ -190,6 +190,7 @@ int main(void)
 //    __HAL_RCC_DBGMCU_CLK_ENABLE();
 //    __HAL_DBGMCU_FREEZE_IWDG();
 
+    can_machine_inited_0 = 0;
     machine_main_init_0();
     can_machine_init_0();
     while(1)
