@@ -8,6 +8,8 @@
 #ifndef CAN_FUNCTIONS_H_
 #define CAN_FUNCTIONS_H_
 
+#include "settings.h"
+#if defined (STM32F072xB)
 #include <stm32f0xx_hal.h>
 
 extern ADC_HandleTypeDef hadc;
@@ -18,25 +20,14 @@ extern UART_HandleTypeDef huart2;
 extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_adc;
-
-#if HEADLESS_AFE_CAN_ID
 #else
-#define AFE_CAN_ID 36
+#include "mock_hal.h"
 #endif
 
-#define CAN_ID_IN_MSG ((1<<10) | (AFE_CAN_ID << 2))
 extern const uint8_t verArr[];
 extern const size_t verArrLen;
 extern uint32_t UID[];
-
-#define CAN_MSG_LIFETIME_MS 10000
-#define CAN_BUFFER_SIZE 64
-#define CAN_MSG_RECIEVED_TIMEOUT_MS 5000
-#define USE_CAN_MSG_BURST_DELAY_MS 1
-
 extern uint32_t canMsgBurstDelay_ms;
-
-#define WATCHDOG_FOR_CAN_RECIEVER_ENABLED 1
 
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 extern uint32_t afe_can_watchdog_timestamp_ms;
@@ -91,13 +82,18 @@ extern volatile int8_t canRxFlag;
 extern s_can_msg_recieved can_msg_received;
 extern CANCircularBuffer_t canTxBuffer;
 
+#if defined (STM32F072xB)
 GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator);
+#endif
 
 int8_t CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg);
 
 uint8_t get_byte_of_message_number(uint8_t msg_index, uint8_t msg_index_max);
 
+#if defined (STM32F072xB)
 HAL_StatusTypeDef configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id);
+#endif
+
 void modify_aurt_as_test_led (void);
 void can_machine_init_0 (void);
 void can_machine (void);

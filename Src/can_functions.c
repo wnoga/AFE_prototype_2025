@@ -7,10 +7,12 @@
 
 #include "can_functions.h"
 #include "AFE_functions.h"
+#include <string.h>
+#if defined (STM32F072xB)
 #include "slcan/slcan.h"
 #include <stm32f0xx_hal_can.h>
 #include <stm32f0xx_hal_gpio.h>
-#include <string.h>
+#endif
 
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 uint32_t afe_can_watchdog_timestamp_ms = 0;
@@ -21,12 +23,29 @@ uint32_t afe_can_watchdog_timeout_ms = 5*60*1000; // default 5
 uint32_t canMsgBurstDelay_ms = 100;
 #endif
 
+#if defined (STM32F072xB)
 extern CAN_HandleTypeDef hcan;
 static CanTxMsgTypeDef CanTxBuffer;
 static CanRxMsgTypeDef CanRxBuffer;
+#endif
+
 s_can_msg_recieved can_msg_received;
 volatile int8_t canRxFlag = 0;
 
+// CAN transmission state machine states
+typedef enum
+{
+  e_CANMachineState_IDLE,
+  e_CANMachineState_SENDING,
+  e_CANMachineState_ERROR // New state for CAN bus error
+} e_CANMachineState;
+
+// Global variables
+CANCircularBuffer_t canTxBuffer;
+e_CANMachineState canState = e_CANMachineState_IDLE;
+uint32_t canTxLast_ms = 0;
+
+#if defined (STM32F072xB)
 void
 _delay (size_t ms)
 {
@@ -39,25 +58,8 @@ _delay (size_t ms)
 void
 blink1 (void)
 {
-//  while(1)
-//  for(uint8_t i0=0;i0<3;++i0)
-//    {
-//      HAL_Delay(250);
   HAL_GPIO_TogglePin (GPIOA, GPIO_PIN_9);
-//      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9,GPIO_PIN_SET);
-//    }
 }
-
-//void
-//nice (void)
-//{
-//  for (size_t _ = 0; _ < 7; ++_)
-//    {
-//      blink1 ();
-//      HAL_Delay (25);
-//    }
-//  HAL_GPIO_WritePin (GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
-//}
 
 GPIO_TypeDef*
 GetGPIOPortByEnumerator (uint8_t enumerator)
@@ -150,19 +152,6 @@ configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id)
   // Apply the filter configuration
   return HAL_CAN_ConfigFilter (hcan, &sFilterConfig);
 }
-
-// CAN transmission state machine states
-typedef enum
-{
-  e_CANMachineState_IDLE,
-  e_CANMachineState_SENDING,
-  e_CANMachineState_ERROR // New state for CAN bus error
-} e_CANMachineState;
-
-// Global variables
-CANCircularBuffer_t canTxBuffer;
-e_CANMachineState canState = e_CANMachineState_IDLE;
-uint32_t canTxLast_ms = 0;
 
 void
 HAL_CAN_TxCpltCallback (CAN_HandleTypeDef *hcan)
@@ -538,3 +527,5 @@ HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
         // canState = e_CANMachineState_ERROR;
     }
 }
+
+#endif // defined (STM32F072xB)

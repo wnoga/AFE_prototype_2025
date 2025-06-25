@@ -46,13 +46,6 @@ s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
 
 s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
 
-typedef enum
-{
-  e_machine_main_init = 0,
-  e_machine_main_idle
-
-} e_machine_main;
-
 volatile e_machine_main machine_main_status = e_machine_main_init;
 
 uint32_t periodic_send_info_period_ms = 1500;
@@ -139,12 +132,14 @@ machine_SPI_Transmit (SPI_HandleTypeDef *hspi, uint8_t *pData, uint16_t Size, ui
   return HAL_SPI_Transmit (hspi, pData, Size, Timeout);
 }
 
+#if defined (STM32F072xB)
 static HAL_StatusTypeDef
 AD8402_Write (SPI_HandleTypeDef *hspi, uint8_t channel, uint8_t value, uint32_t timeout)
 {
   uint16_t toTransmit = (channel & 0x01) | (value & 0xFF); // A1 should be always 0 for AD8402
   return HAL_SPI_Transmit (hspi, (uint8_t*) &toTransmit, 1, timeout);
 }
+#endif
 
 /***
  * Keep this to avoid mistake from values
@@ -488,10 +483,12 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_startADC:
       {
 	/* Start ADC in DMA mode */
+#if defined (STM32F072xB)
 	HAL_ADC_Start_DMA (&hadc, &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
 	HAL_TIM_Base_Start (&htim1);
 	htim1.Instance->ARR = 50000 - 1;
 //	htim1.Instance->ARR = 10000 - 1;
+#endif
 	tmp.data[1] = get_byte_of_message_number (0, 1);
 	tmp.data[2] = msg.Data[2]; // For channels
 	tmp.data[3] = msg.Data[3]; // Enabled
@@ -628,9 +625,11 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (channels & (1 << channel))
 	      {
+#if defined (STM32F072xB)
 		tmp.data[4] |= (
 		    AD8402_Write (&hspi1, channel, value, TIMEOUT_SPI1_MS) == HAL_OK ? 0 : 1)
 		    << channel;
+#endif
 	      }
 	  }
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
@@ -643,6 +642,7 @@ can_execute (const s_can_msg_recieved msg)
 	 * Data[3] - GPIO pin number
 	 * Data[4] - GPIO pin state
 	 */
+#if defined (STM32F072xB)
 	GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator (msg.Data[2]);
 	uint32_t GPIO_Pin = 1 << msg.Data[3]; // GPIO Pin mask
 	uint8_t PinState = msg.Data[4];
@@ -653,6 +653,7 @@ can_execute (const s_can_msg_recieved msg)
 	tmp.data[4] = msg.Data[4];
 	tmp.dlc = 5;
 	CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+#endif
 	break;
       }
 
