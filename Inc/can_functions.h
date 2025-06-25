@@ -9,7 +9,6 @@
 #define CAN_FUNCTIONS_H_
 
 #include "settings.h"
-#if defined (STM32F072xB)
 #include <stm32f0xx_hal.h>
 
 extern ADC_HandleTypeDef hadc;
@@ -20,9 +19,7 @@ extern UART_HandleTypeDef huart2;
 extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_adc;
-#else
-#include "mock_hal.h"
-#endif
+
 
 extern const uint8_t verArr[];
 extern const size_t verArrLen;
@@ -82,17 +79,12 @@ extern volatile int8_t canRxFlag;
 extern s_can_msg_recieved can_msg_received;
 extern CANCircularBuffer_t canTxBuffer;
 
-#if defined (STM32F072xB)
 GPIO_TypeDef * GetGPIOPortByEnumerator(uint8_t enumerator);
-#endif
-
 int8_t CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg);
 
 uint8_t get_byte_of_message_number(uint8_t msg_index, uint8_t msg_index_max);
 
-#if defined (STM32F072xB)
 HAL_StatusTypeDef configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id);
-#endif
 
 void modify_aurt_as_test_led (void);
 void can_machine_init_0 (void);

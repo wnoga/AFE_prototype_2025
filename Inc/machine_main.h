@@ -11,9 +11,7 @@
 #include "settings.h"
 #include "AFE_functions.h" // For s_channelSettings, s_regulatorSettings, etc.
 
-#if defined (STM32F072xB)
 #include "can_functions.h"
-#endif
 
 typedef enum
 {

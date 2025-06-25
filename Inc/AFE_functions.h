@@ -182,4 +182,6 @@ float faxplusb (float value, float a, float b);
 float faxplusbcs (float value, s_channelSettings *ch);
 uint8_t get_number_of_channels (uint8_t channels_mask);
 
+uint16_t machine_DAC_convert_V_to_DAC_value (float V, s_regulatorSettings *regulatorSettings);
+
 #endif /* AFE_FUNCTIONS_H_ */

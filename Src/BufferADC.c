@@ -11,11 +11,7 @@
 #include <stdarg.h>
 #include <time.h>
 
-#if defined (STM32F072xB)
-#include <stm32f0xx_hal.h>
-#else
-#include "mock_hal.h"
-#endif
+#include <stdint.h>
 
 /**
  * @brief Initializes the circular buffer for ADC measurements.

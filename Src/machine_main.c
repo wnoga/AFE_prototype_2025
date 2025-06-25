@@ -358,15 +358,6 @@ machine_DAC_switch (uint8_t channel, uint8_t enable)
 }
 
 /***
- * FIXME Create conversion from float to DAC uint16_t value
- */
-inline uint16_t __attribute ((always_inline, optimize("-O3")))
-machine_DAC_convert_V_to_DAC_value (float V, s_regulatorSettings *regulatorSettings)
-{
-  return faxplusb (V, regulatorSettings->a_dac, regulatorSettings->b_dac);
-}
-
-/***
  */
 void __attribute__ ((cold, optimize("-Os")))
 machine_main_init_0 (void)
@@ -422,8 +413,10 @@ machine_main_init_0 (void)
   /* Append ADC channel to regulator settings */
   afe_regulatorSettings[0].temperature_channelSettings_ptr =
       &afe_channelSettings[e_ADC_CHANNEL_TEMP_LOCAL];
+  afe_regulatorSettings[0].subdevice = e_subdevice_master;
   afe_regulatorSettings[1].temperature_channelSettings_ptr =
       &afe_channelSettings[e_ADC_CHANNEL_TEMP_EXT];
+  afe_regulatorSettings[0].subdevice = e_subdevice_slave;
 }
 
 /**

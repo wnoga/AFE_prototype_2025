@@ -12,6 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+uint32_t __attribute__ ((weak))
+HAL_GetTick(void)
+{
+  return 0;
+}
+
 // Structure to store ADC measurement and timestamp
 typedef struct __attribute__((packed))
 {

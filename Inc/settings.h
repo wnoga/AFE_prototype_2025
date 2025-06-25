@@ -59,9 +59,5 @@
 #define USE_CAN_MSG_BURST_DELAY_MS 1
 #define WATCHDOG_FOR_CAN_RECIEVER_ENABLED 1
 
-#if defined (STM32F072xB)
-#else
-#include "mock_hal.h"
-#endif
 
 #endif /* SETTINGS_H_ */

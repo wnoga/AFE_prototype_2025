@@ -205,16 +205,14 @@ _arima_example (int p, int d, int q)
   arima_apply_ARMA (diff_values, n - d, time_diffs, ar_coeffs, p, ma_coeffs, q, // ARMA
 		    0, predicted);
   arima_inverse_differencing (predicted, series_value, n - d, d, softened); // inverse differencing
-#if defined (STM32F072xB)
-#else
+
   printf ("Unix Timestamp,Original,Predicted,Softened\n");
-  for (int i = d; i < n; i++)
-    {
-      printf ("%ld,%.2f,%.2f,%.2f\n", series_timestamp[i], series_value[i], // print values
-	      series_value[i - 1] + predicted[i - d],
-	      series_value[i - 1] + softened[i - d]);
-    }
-#endif
+//  for (int i = d; i < n; i++)
+//    {
+//      printf ("%ld,%.2f,%.2f,%.2f\n", series_timestamp[i], series_value[i], // print values
+//	      series_value[i - 1] + predicted[i - d],
+//	      series_value[i - 1] + softened[i - d]);
+//    }
 
   return 0;
 }
