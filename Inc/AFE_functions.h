@@ -24,6 +24,8 @@ typedef enum
 
   AFECommand_resetCAN = 0x07,
 
+  AFECommand_getSubdeviceStatus = 0x08,
+
   AFECommand_getSensorDataSi_last_byMask = 0x30,
   AFECommand_getSensorDataSi_average_byMask = 0x31,
 
@@ -173,6 +175,8 @@ typedef struct __attribute__((packed))
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
   uint16_t ramp_target_voltage_set_bits_old; // prevent sending many times msg when is not change in DAC target value
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+  float V; // Last voltage
+  float T; // Last temperature
 } s_regulatorSettings;
 
 

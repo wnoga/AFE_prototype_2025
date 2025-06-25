@@ -450,6 +450,8 @@ process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t t
       if (regulatorSettings_ptr->ramp_target_voltage_set_bits
           != regulatorSettings_ptr->ramp_target_voltage_set_bits_old)
         {
+	  regulatorSettings_ptr->T = average_Temperature;
+	  regulatorSettings_ptr->V = voltage_for_SiPM;
           CAN_Message_t tmp; // Local message for debug
           tmp.id = CAN_ID_IN_MSG;
           tmp.timestamp = HAL_GetTick (); // for timeout
@@ -578,6 +580,36 @@ process_dac_ramping (s_regulatorSettings *regulatorSettings_ptr, uint32_t timest
  */
 
 /* --- System & Informational Command Handlers --- */
+
+static inline void __attribute__((always_inline, optimize("-O3")))
+handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
+{
+  reply->id = CAN_ID_IN_MSG;
+  reply->timestamp = HAL_GetTick (); // for timeout
+//  reply->data[0] = AFECommand_getSubdeviceStatus;
+  e_subdevice subdevice = msg->Data[2];
+  if (subdevice > e_subdevice_slave)
+    {
+      return;
+    }
+  s_regulatorSettings *rs = &afe_regulatorSettings[subdevice];
+  // Voltage
+  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &reply, 0, 4,
+                                               rs->subdevice,
+                                               &rs->V);
+  // Average temperature
+  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &reply, 1, 4,
+                                               rs->subdevice,
+                                               &rs->T);
+  // Old temperature
+  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &reply, 2, 4,
+                                               rs->subdevice,
+                                               &rs->T_old);
+  // Timestamp
+  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &reply, 3, 4,
+                                               rs->subdevice,
+                                               rs->ramp_bit_step_timestamp_old_ms);
+}
 
 static inline void __attribute__((always_inline, optimize("-O3")))
 handle_getSerialNumber (CAN_Message_t *reply)
@@ -967,6 +999,12 @@ can_execute (const s_can_msg_recieved msg)
 	/* recieved timestamp */
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1, 2, 0x00,
 						       msg.timestamp);
+	break;
+      }
+
+    case AFECommand_getSubdeviceStatus:
+      {
+	handle_getSubdeviceStatus (&msg, &tmp);
 	break;
       }
 
