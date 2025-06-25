@@ -180,6 +180,7 @@ HAL_CAN_ErrorCallback (CAN_HandleTypeDef *hcan)
       // Optionally handle failure to re-arm reception IT
     }
 }
+#endif
 
 // Initialize circular buffer
 void __attribute__ ((cold, optimize("-Os")))
@@ -256,6 +257,7 @@ CANCircularBuffer_dequeueMessage (CANCircularBuffer_t *cb)
   return msg;
 }
 
+
 // Transmit handler (called periodically or in main loop)
 void __attribute__ ((optimize("-O3")))
 CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
@@ -297,6 +299,7 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
         }
 #endif // CAN_MSG_BURST_DELAY_MS
 
+#if defined (STM32F072xB)
       canTxLast_ms = HAL_GetTick();
       hcan->pTxMsg->StdId = msg->id;
       hcan->pTxMsg->DLC = msg->dlc;
@@ -313,6 +316,7 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
           // Transmission request failed (e.g., bus off or other hardware issue)
           canState = e_CANMachineState_ERROR;
         }
+#endif
     }
 }
 
@@ -331,6 +335,7 @@ CAN_TransmitCallback (CAN_HandleTypeDef *hcan)
 void
 can_send_msg (CAN_HandleTypeDef *hcan, uint8_t *msg, size_t len, uint8_t own_id, uint8_t msg_code)
 {
+#if defined (STM32F072xB)
   if (len > 8)
     {
       return;
@@ -340,8 +345,10 @@ can_send_msg (CAN_HandleTypeDef *hcan, uint8_t *msg, size_t len, uint8_t own_id,
   hcan->pTxMsg->StdId |= msg_code & 0b11;
   memcpy (&hcan->pTxMsg->Data[0], msg, len);
   hcan->pTxMsg->RTR = CAN_RTR_DATA;
+#endif
 }
 
+#if defined (STM32F072xB)
 void
 modify_aurt_as_test_led (void)
 {
@@ -356,6 +363,7 @@ modify_aurt_as_test_led (void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init (GPIOA, &GPIO_InitStruct);
 }
+#endif
 
 typedef enum
 {
@@ -372,8 +380,10 @@ can_machine_init_0 (void)
   canState = e_CANMachineState_IDLE;
   canTxLast_ms = HAL_GetTick ();
 
+#if defined (STM32F072xB)
   hcan.pTxMsg = &CanTxBuffer;
   hcan.pRxMsg = &CanRxBuffer;
+#endif
 }
 
 uint8_t can_machine_inited_0 = 0;
@@ -390,12 +400,13 @@ can_machine (void)
 	canTxLast_ms = HAL_GetTick ();
 
 	/* CAN interrupt Init */
-
+#if defined (STM32F072xB)
 	HAL_NVIC_SetPriority (CEC_CAN_IRQn, 2, 2);
 	HAL_NVIC_EnableIRQ (CEC_CAN_IRQn);
 	HAL_CAN_Receive_IT (&hcan, CAN_FIFO0);
 
 	StartCan ();
+#endif
 	CAN_Message_t tmp;
 	// uint8_t command = AFECommand_resetAll;
 	// uint32_t msg_id = CAN_ID_IN_MSG;
@@ -423,9 +434,11 @@ can_machine (void)
   {
     tmp.data[0] = AFECommand_resetAll; // Standard reply [function]
     tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+#if defined (STM32F072xB)
     tmp.data[2] = RCC->CSR;
     RCC->CSR |= RCC_CSR_RMVF;  // Set the RMVF bit to clear all reset flags
     __DSB ();  // Ensure the flag is cleared before continuing execution
+#endif
     tmp.dlc = 3;
     CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
     can_machine_inited_0 = 1;
@@ -448,6 +461,7 @@ can_machine (void)
 	  // NVIC_SystemReset (); // Reset if CAN error
     canState = e_can_machine_state_init;
 	}
+
 	CAN_TransmitHandler (&hcan);
 	break;
       }
@@ -501,6 +515,7 @@ CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN_Mess
   CANCircularBuffer_enqueueMessage (cb, tmp);
 }
 
+#if defined (STM32F072xB)
 void __attribute__ ((optimize("-O3")))
 HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
 {
