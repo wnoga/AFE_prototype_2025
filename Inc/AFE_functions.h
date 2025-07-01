@@ -91,11 +91,11 @@ typedef enum
   AFECommandSubdevice_both 	= 0b00000011,
 } AFECommandSubdevice;
 
-typedef enum
-{
-  e_subdevice_master=0,
-  e_subdevice_slave,
-} e_subdevice;
+//typedef enum
+//{
+//  e_subdevice_master=0,
+//  e_subdevice_slave,
+//} e_subdevice;
 
 typedef enum
 {
@@ -123,11 +123,11 @@ typedef enum
   e_average_ARIMA
 } e_average;
 
-typedef struct __attribute__((packed))
+typedef struct
 {
   uint8_t channel_nr; // ADC channel number
   // exponential
-  e_subdevice subdevice; // master or slave
+  AFECommandSubdevice subdevice; // master or slave
   s_BufferADC *buffer_ADC; // pointer to buffer for ADC structure
   /* buffer and averaging settings */
 //  size_t buffer_size;
@@ -148,9 +148,9 @@ typedef struct __attribute__((packed))
 
 } s_channelSettings;
 
-typedef struct __attribute__((packed))
+typedef struct
 {
-  e_subdevice subdevice;
+  AFECommandSubdevice subdevice;
   s_channelSettings *temperature_channelSettings_ptr;
   /* Temperature loop parameters */
   /* From TempLoop.csv */

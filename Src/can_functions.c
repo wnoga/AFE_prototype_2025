@@ -458,9 +458,7 @@ can_machine (void)
 inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
 get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
 {
-  return
-      ((msg_index > 15) | (total_msg_count > 15)) ?
-	  0 : (0xF0 & (total_msg_count << 4)) | ((msg_index + 1) & 0x0F); // 0xF0 - total nr of msgs, 0x0F msg nr
+  return (0xF0 & ((total_msg_count - 1) << 4)) | ((msg_index) & 0x0F); // 0xY0 - max index, 0x0Z msg index
 }
 
 void

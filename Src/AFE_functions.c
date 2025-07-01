@@ -197,7 +197,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   uint32_t *arima_series_timestamp =
       (method == e_average_ARIMA) ? malloc (sizeof(uint32_t) * N) : malloc (0);
   uint32_t *arima_time_diffs =
-      (method == e_average_ARIMA) ? malloc (sizeof(uint32_t) * N) : malloc (0);
+      (method == e_average_ARIMA) ? malloc (sizeof(uint32_t) * (N-1)) : malloc (0);
   float *arima_series_value =
       (method == e_average_ARIMA) ? malloc (sizeof(float) * N) : malloc (0);
   float *arima_diff_values =
@@ -209,7 +209,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 #endif
 
   s_ADC_Measurement *ptr;
-  size_t i;
+  size_t i, valid_count = 0;
   size_t cnt = 0;
   /* Set default value for sum */
   if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
@@ -217,7 +217,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       sum = NAN;
     }
   for (count = 0; count < N; ++count)
-    {
+  {
       /* Check if we should use moving average */
       if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC)
 	  || (method == e_average_ARIMA))
@@ -233,18 +233,19 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       else
       /* Use standard method */
 	{
-	  i = (i_0 - count) % cb->buffer_size; // decrement buffer index from head index
+	  i = (i_0 - N + count) % cb->buffer_size;
 	  ptr = &cb->buffer[i];
 	  if ((timestamp_ms - ptr->timestamp_ms) > max_dt_ms)
 	    {
 	      break;
 	    }
 	}
+
       /* Get value */
       value = (float) ptr->adc_value;
       if (isnanf (value))
 	{
-	  continue;
+		continue;
 	}
       ++cnt;
       switch (method)
@@ -288,13 +289,16 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	  }
 #if USE_ARIMA
 	case e_average_ARIMA:
-	  {
+    {
 	    /* Update series for ARIMA */
-	    arima_series_timestamp[arima_n] = ptr->timestamp_ms;
-	    arima_series_value[arima_n] = ptr->adc_value;
-	    ++arima_n;
+	    if (arima_n < N)
+      {
+	      arima_series_timestamp[arima_n] = ptr->timestamp_ms;
+	      arima_series_value[arima_n] = faxplusbcs(ptr->adc_value, a); // Apply transformation here.
+	      ++arima_n;
+      }
 	    break;
-	  }
+    }
 #endif
 	default:
 	  break;
@@ -370,29 +374,33 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	    average_result = ptr0->adc_value;
 	    break;
 	  }
-	}
-    }
-  average_result = average_result * multiplicator;
-
+	  }
+  }
+  average_result = (method != e_average_ARIMA) ? average_result * multiplicator : average_result;
 #if USE_ARIMA
-  free (arima_diff_values);
-  free (arima_predicted);
-  free (arima_series_timestamp);
-  free (arima_series_value);
-  free (arima_time_diffs);
-  free (arima_smoothing);
+  if (method == e_average_ARIMA)
+  {
+    free (arima_diff_values);
+    free (arima_predicted);
+    free (arima_series_timestamp);
+    free (arima_series_value);
+    free (arima_time_diffs);
+    free (arima_smoothing);
+  }
 #endif
   return average_result;
 }
 
-inline float __attribute__ ((always_inline, optimize("-O3")))
+float __attribute__ ((optimize("-O3")))
 get_average_atSettings (s_channelSettings *a, uint32_t timestamp)
 {
-  return faxplusbcs (
+  return faxplusbcs(
       get_average_from_buffer (a->buffer_ADC, a->max_N, timestamp, a->max_dt_ms,
 			       a->averaging_method, a->alpha, a->multiplicator),
       a);
+
 }
+
 
 inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
 get_number_of_channels (uint8_t channels_mask)

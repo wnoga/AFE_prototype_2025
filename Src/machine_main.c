@@ -413,10 +413,10 @@ machine_main_init_0 (void)
   /* Append ADC channel to regulator settings */
   afe_regulatorSettings[0].temperature_channelSettings_ptr =
       &afe_channelSettings[e_ADC_CHANNEL_TEMP_LOCAL];
-  afe_regulatorSettings[0].subdevice = e_subdevice_master;
+  afe_regulatorSettings[0].subdevice = AFECommandSubdevice_master;
   afe_regulatorSettings[1].temperature_channelSettings_ptr =
       &afe_channelSettings[e_ADC_CHANNEL_TEMP_EXT];
-  afe_regulatorSettings[0].subdevice = e_subdevice_slave;
+  afe_regulatorSettings[1].subdevice = AFECommandSubdevice_slave;
 }
 
 /**
@@ -456,22 +456,7 @@ process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t t
           tmp.id = CAN_ID_IN_MSG;
           tmp.timestamp = HAL_GetTick (); // for timeout
           tmp.data[0] = AFECommand_debug_machine_control;
-          // Voltage
-          CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 0, 4,
-                                                       regulatorSettings_ptr->subdevice,
-                                                       &voltage_for_SiPM);
-          // Average temperature
-          CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 1, 4,
-                                                       regulatorSettings_ptr->subdevice,
-                                                       &average_Temperature);
-          // Old temperature
-          CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 2, 4,
-                                                       regulatorSettings_ptr->subdevice,
-                                                       &regulatorSettings_ptr->T_old);
-          // Timestamp
-          CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 3, 4,
-                                                       regulatorSettings_ptr->subdevice,
-                                                       timestamp_ms);
+          enqueueSubdeviceStatus(&tmp, regulatorSettings_ptr->subdevice);
         }
       regulatorSettings_ptr->ramp_target_voltage_set_bits_old =
           regulatorSettings_ptr->ramp_target_voltage_set_bits;
@@ -553,11 +538,11 @@ process_dac_ramping (s_regulatorSettings *regulatorSettings_ptr, uint32_t timest
 #else // TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
           switch (regulatorSettings_ptr->subdevice) // Use subdevice directly
             {
-            case e_subdevice_master:
+            case AFECommandSubdevice_master:
               machine_DAC_set (DAC_CHANNEL_1,
                                regulatorSettings_ptr->ramp_curent_voltage_set_bits);
               break;
-            case e_subdevice_slave:
+            case AFECommandSubdevice_slave:
               machine_DAC_set (DAC_CHANNEL_2,
                                regulatorSettings_ptr->ramp_curent_voltage_set_bits);
               break;
@@ -569,6 +554,46 @@ process_dac_ramping (s_regulatorSettings *regulatorSettings_ptr, uint32_t timest
         }
     }
 #endif // HARDWARE_CONTROL_TEMPERATURE_LOOP_RAMP_BIT_DISABLED
+}
+
+void
+enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
+{
+  uint8_t total_msg_count = 6;
+  if (AFECommandSubdevice_both == (masked_channel & AFECommandSubdevice_both))
+    {
+      total_msg_count *= 2;
+    }
+  uint8_t cnt = 0;
+  for (uint8_t i = 0; i < 2; ++i)
+    {
+      if (0x01 & (masked_channel >> i))
+	{
+	  uint8_t subdev = 1 << i;
+	  s_regulatorSettings *rs = &afe_regulatorSettings[i];
+
+	  // Voltage
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 0 + cnt,
+						       total_msg_count, subdev, &rs->V);
+	  // Average temperature
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 1 + cnt,
+						       total_msg_count, subdev, &rs->T);
+	  // Old temperature
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 2 + cnt,
+						       total_msg_count, subdev, &rs->T_old);
+	  // V Offset
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 3 + cnt,
+						       total_msg_count, subdev, &rs->V_offset);
+	  // Enabled?
+	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 4 + cnt, total_msg_count,
+						 subdev, (uint8_t*) &rs->enabled, 1);
+	  // Timestamp
+	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, 5 + cnt,
+							 total_msg_count, subdev,
+							 rs->ramp_bit_step_timestamp_old_ms);
+	  cnt += 6;
+	}
+    }
 }
 
 /*
@@ -587,28 +612,12 @@ handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   reply->id = CAN_ID_IN_MSG;
   reply->timestamp = HAL_GetTick (); // for timeout
 //  reply->data[0] = AFECommand_getSubdeviceStatus;
-  e_subdevice subdevice = msg->Data[2];
-  if (subdevice > e_subdevice_slave)
+  uint8_t masked_channel = msg->Data[2] & 0x03;
+  if (0x00 == (masked_channel & AFECommandSubdevice_both))
     {
       return;
     }
-  s_regulatorSettings *rs = &afe_regulatorSettings[subdevice];
-  // Voltage
-  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &reply, 0, 4,
-                                               rs->subdevice,
-                                               &rs->V);
-  // Average temperature
-  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &reply, 1, 4,
-                                               rs->subdevice,
-                                               &rs->T);
-  // Old temperature
-  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &reply, 2, 4,
-                                               rs->subdevice,
-                                               &rs->T_old);
-  // Timestamp
-  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &reply, 3, 4,
-                                               rs->subdevice,
-                                               rs->ramp_bit_step_timestamp_old_ms);
+  enqueueSubdeviceStatus(reply, masked_channel);
 }
 
 static inline void __attribute__((always_inline, optimize("-O3")))
