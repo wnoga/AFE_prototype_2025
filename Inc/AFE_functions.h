@@ -177,6 +177,7 @@ typedef struct
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
   float V; // Last voltage
   float T; // Last temperature
+  float V_target; // Last voltage target
 } s_regulatorSettings;
 
 

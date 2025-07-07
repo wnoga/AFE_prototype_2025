@@ -12,7 +12,6 @@
 #include <math.h>
 #include <stdbool.h>
 
-extern uint16_t adc_dma_buffer[];
 uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
 #if USE_STACK_FOR_BUFFER
 s_ADC_Measurement *adc_measurement_raw[AFE_NUMBER_OF_CHANNELS];
@@ -252,27 +251,27 @@ machine_DAC_set (uint8_t channel, uint16_t value)
     }
 }
 
-void
-machine_DAC_set_si (uint8_t channel, float voltage)
-{
-  const float V_min = 50.0f;
-  const float V_max = 82.0f;
-  if (voltage == 0)
-    {
-      machine_DAC_set (channel, UINT16_MAX);
-      return;
-    }
-  else if (voltage < V_min)
-    {
-      voltage = V_min;
-    }
-  else if (voltage > V_max)
-    {
-      voltage = V_max;
-    }
-  uint16_t value = UINT16_MAX * (voltage - V_min) / (V_max - V_min);
-  machine_DAC_set (channel, value);
-}
+//void
+//machine_DAC_set_si (uint8_t channel, float voltage)
+//{
+//  const float V_min = 50.0f;
+//  const float V_max = 82.0f;
+//  if (voltage == 0)
+//    {
+//      machine_DAC_set (channel, UINT16_MAX);
+//      return;
+//    }
+//  else if (voltage < V_min)
+//    {
+//      voltage = V_min;
+//    }
+//  else if (voltage > V_max)
+//    {
+//      voltage = V_max;
+//    }
+//  uint16_t value = UINT16_MAX * (roundf(voltage) - V_min) / (V_max - V_min);
+//  machine_DAC_set (channel, value);
+//}
 
 /***
  * Keep this to avoid mistake from values
@@ -393,19 +392,19 @@ machine_main_init_0 (void)
       afe_regulatorSettings[i0].V_opt = AFE_REGULATOR_DEFAULT_U0;
       afe_regulatorSettings[i0].V_offset = AFE_REGULATOR_DEFAULT_U_offset; // Voltage offset
       afe_regulatorSettings[i0].dT = AFE_REGULATOR_DEFAULT_dT; // delta Temperature when new DAC value can be set
-      afe_regulatorSettings[i0].T_old = afe_regulatorSettings[i0].T_opt;
+      afe_regulatorSettings[i0].T_old = AFE_REGULATOR_DEFAULT_T_old;
       afe_regulatorSettings[i0].enabled = 0;
 #if USE_SMALLER_STEPS_NEAR_DAC_TARGET
-      afe_regulatorSettings[i0].ramp_bit_step = 100;
+      afe_regulatorSettings[i0].ramp_bit_step = AFE_REGULATOR_DEFAULT_ramp_bit_step;
 #else
       afe_regulatorSettings[i0].ramp_bit_step = 1;
 #endif
-      afe_regulatorSettings[i0].ramp_bit_step_every_ms = 100;
+      afe_regulatorSettings[i0].ramp_bit_step_every_ms = AFE_REGULATOR_DEFAULT_ramp_bit_step_every_ms;
       afe_regulatorSettings[i0].ramp_bit_step_timestamp_old_ms = 0;
       afe_regulatorSettings[i0].ramp_curent_voltage_set_bits = AFE_DAC_START;
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits = AFE_DAC_START;
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
-      afe_regulatorSettings[i0].ramp_target_voltage_set_bits_old = !AFE_DAC_START;
+      afe_regulatorSettings[i0].ramp_target_voltage_set_bits_old = 0x0FFF & (~AFE_DAC_START);
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
     }
 
@@ -446,12 +445,13 @@ process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t t
                                                        regulatorSettings_ptr);
       regulatorSettings_ptr->ramp_target_voltage_set_bits = machine_DAC_convert_V_to_DAC_value (
           voltage_for_SiPM, regulatorSettings_ptr);
+	  regulatorSettings_ptr->T = average_Temperature;
+	  regulatorSettings_ptr->V = voltage_for_SiPM;
+	  regulatorSettings_ptr->V_target = voltage_for_SiPM;
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
       if (regulatorSettings_ptr->ramp_target_voltage_set_bits
           != regulatorSettings_ptr->ramp_target_voltage_set_bits_old)
         {
-	  regulatorSettings_ptr->T = average_Temperature;
-	  regulatorSettings_ptr->V = voltage_for_SiPM;
           CAN_Message_t tmp; // Local message for debug
           tmp.id = CAN_ID_IN_MSG;
           tmp.timestamp = HAL_GetTick (); // for timeout
@@ -473,18 +473,17 @@ process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t t
  * @param timestamp_ms Current system timestamp in milliseconds.
  */
 static inline void __attribute__((always_inline, optimize("-O3")))
-process_dac_ramping (s_regulatorSettings *regulatorSettings_ptr, uint32_t timestamp_ms)
+process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 {
 #if HARDWARE_CONTROL_TEMPERATURE_LOOP_RAMP_BIT_DISABLED
   // DAC ramping is disabled, do nothing.
 #else // HARDWARE_CONTROL_TEMPERATURE_LOOP_RAMP_BIT_DISABLED
-  uint32_t d_bit = regulatorSettings_ptr->ramp_bit_step;
+  uint16_t d_bit = rptr->ramp_bit_step;
 #if USE_SMALLER_STEPS_NEAR_DAC_TARGET
-  if ((int32_t) regulatorSettings_ptr->ramp_curent_voltage_set_bits
-      - (int32_t) regulatorSettings_ptr->ramp_target_voltage_set_bits
-      < (regulatorSettings_ptr->ramp_bit_step))
+  if (abs((int32_t) rptr->ramp_curent_voltage_set_bits - (int32_t) rptr->ramp_target_voltage_set_bits)
+      < (rptr->ramp_bit_step))
     {
-      d_bit = regulatorSettings_ptr->ramp_bit_step / 10;
+      d_bit = rptr->ramp_bit_step / 10;
     }
   if (d_bit < 1)
     {
@@ -492,66 +491,69 @@ process_dac_ramping (s_regulatorSettings *regulatorSettings_ptr, uint32_t timest
     }
 #endif // USE_SMALLER_STEPS_NEAR_DAC_TARGET
 
-  if ((timestamp_ms - regulatorSettings_ptr->ramp_bit_step_timestamp_old_ms)
-      >= regulatorSettings_ptr->ramp_bit_step_every_ms)
+  if ((timestamp_ms - rptr->ramp_bit_step_timestamp_old_ms) >= rptr->ramp_bit_step_every_ms)
     {
-      regulatorSettings_ptr->ramp_bit_step_timestamp_old_ms = timestamp_ms;
-      if (regulatorSettings_ptr->ramp_curent_voltage_set_bits
-          != regulatorSettings_ptr->ramp_target_voltage_set_bits)
-        {
-          if (regulatorSettings_ptr->ramp_curent_voltage_set_bits
-              < regulatorSettings_ptr->ramp_target_voltage_set_bits)
-            {
-              if (((int32_t) regulatorSettings_ptr->ramp_curent_voltage_set_bits
-                  + (int32_t) regulatorSettings_ptr->ramp_bit_step)
-                  >= (int32_t) regulatorSettings_ptr->ramp_target_voltage_set_bits)
-                {
-                  regulatorSettings_ptr->ramp_curent_voltage_set_bits =
-                      regulatorSettings_ptr->ramp_target_voltage_set_bits;
-                }
-              else
-                {
-                  regulatorSettings_ptr->ramp_curent_voltage_set_bits += d_bit;
-                }
-            }
-          else
-            {
-              if (((int32_t) regulatorSettings_ptr->ramp_curent_voltage_set_bits
-                  - (int32_t) regulatorSettings_ptr->ramp_bit_step)
-                  <= (int32_t) regulatorSettings_ptr->ramp_target_voltage_set_bits)
-                {
-                  regulatorSettings_ptr->ramp_curent_voltage_set_bits =
-                      regulatorSettings_ptr->ramp_target_voltage_set_bits;
-                }
-              else
-                {
-                  regulatorSettings_ptr->ramp_curent_voltage_set_bits -= d_bit;
-                }
-            }
+      rptr->ramp_bit_step_timestamp_old_ms = timestamp_ms;
+      if (rptr->ramp_curent_voltage_set_bits != rptr->ramp_target_voltage_set_bits)
+	{
+	  if (rptr->ramp_curent_voltage_set_bits < rptr->ramp_target_voltage_set_bits)
+	    {
+	      if (((int32_t) rptr->ramp_curent_voltage_set_bits + (int32_t) d_bit)
+		  >= (int32_t) rptr->ramp_target_voltage_set_bits)
+		{
+		  rptr->ramp_curent_voltage_set_bits = rptr->ramp_target_voltage_set_bits;
+		}
+	      else
+		{
+		  rptr->ramp_curent_voltage_set_bits += d_bit;
+		}
+	    }
+	  else
+	    {
+	      if (((int32_t) rptr->ramp_curent_voltage_set_bits - (int32_t) d_bit)
+		  <= (int32_t) rptr->ramp_target_voltage_set_bits)
+		{
+		  rptr->ramp_curent_voltage_set_bits = rptr->ramp_target_voltage_set_bits;
+		}
+	      else
+		{
+		  rptr->ramp_curent_voltage_set_bits -= d_bit;
+		}
+	    }
 
-          if (regulatorSettings_ptr->ramp_curent_voltage_set_bits >= AFE_DAC_MAX)
-            {
-              regulatorSettings_ptr->ramp_curent_voltage_set_bits = AFE_DAC_MAX;
-            }
+	  if (rptr->ramp_curent_voltage_set_bits >= AFE_DAC_MAX)
+	    {
+	      rptr->ramp_curent_voltage_set_bits = AFE_DAC_MAX;
+	    }
 #if TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
           // DAC hardware control is disabled, do nothing.
 #else // TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
-          switch (regulatorSettings_ptr->subdevice) // Use subdevice directly
-            {
-            case AFECommandSubdevice_master:
-              machine_DAC_set (DAC_CHANNEL_1,
-                               regulatorSettings_ptr->ramp_curent_voltage_set_bits);
-              break;
-            case AFECommandSubdevice_slave:
-              machine_DAC_set (DAC_CHANNEL_2,
-                               regulatorSettings_ptr->ramp_curent_voltage_set_bits);
-              break;
-            default:
-              Error_Handler(); // Should not happen with e_subdevice enum
-              break;
-            }
+	  switch (rptr->subdevice)
+	    // Use subdevice directly
+	    {
+	    case AFECommandSubdevice_master:
+	      {
+		machine_DAC_set (DAC_CHANNEL_1, rptr->ramp_curent_voltage_set_bits);
+		break;
+	      }
+	    case AFECommandSubdevice_slave:
+	      {
+		machine_DAC_set (DAC_CHANNEL_2, rptr->ramp_curent_voltage_set_bits);
+		break;
+	      }
+	    case AFECommandSubdevice_both:
+	      {
+		Error_Handler(); // Should not happen with e_subdevice enum
+		break;
+	      }
+	    default:
+	      {
+		Error_Handler(); // Should not happen with e_subdevice enum
+		break;
+	      }
+	    }
 #endif // TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
-        }
+	}
     }
 #endif // HARDWARE_CONTROL_TEMPERATURE_LOOP_RAMP_BIT_DISABLED
 }
@@ -559,7 +561,8 @@ process_dac_ramping (s_regulatorSettings *regulatorSettings_ptr, uint32_t timest
 void
 enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 {
-  uint8_t total_msg_count = 6;
+  const uint8_t msg_count_per_subdev = 7;
+  uint8_t total_msg_count = msg_count_per_subdev;
   if (AFECommandSubdevice_both == (masked_channel & AFECommandSubdevice_both))
     {
       total_msg_count *= 2;
@@ -575,23 +578,26 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 	  // Voltage
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 0 + cnt,
 						       total_msg_count, subdev, &rs->V);
-	  // Average temperature
+	  // Target Voltage
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 1 + cnt,
+						       total_msg_count, subdev, &rs->V_target);
+	  // Average temperature
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 2 + cnt,
 						       total_msg_count, subdev, &rs->T);
 	  // Old temperature
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 2 + cnt,
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 3 + cnt,
 						       total_msg_count, subdev, &rs->T_old);
 	  // V Offset
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 3 + cnt,
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 4 + cnt,
 						       total_msg_count, subdev, &rs->V_offset);
 	  // Enabled?
-	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 4 + cnt, total_msg_count,
+	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 5 + cnt, total_msg_count,
 						 subdev, (uint8_t*) &rs->enabled, 1);
 	  // Timestamp
-	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, 5 + cnt,
+	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, 6 + cnt,
 							 total_msg_count, subdev,
 							 rs->ramp_bit_step_timestamp_old_ms);
-	  cnt += 6;
+	  cnt += msg_count_per_subdev;
 	}
     }
 }
@@ -644,7 +650,9 @@ handle_getVersion (CAN_Message_t *reply)
 static inline void __attribute__((always_inline, optimize("-O3")))
 handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
-  HAL_ADC_Start_DMA (&hadc, &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
+  HAL_ADC_Start_DMA (&hadc,
+		     (uint32_t*)&adc_dma_buffer[0],
+		     AFE_NUMBER_OF_CHANNELS);
   HAL_TIM_Base_Start (&htim1);
   htim1.Instance->ARR = 50000 - 1;
   reply->data[2] = msg->Data[2]; // For channels
@@ -738,7 +746,7 @@ handle_setAD8402Value (const s_can_msg_recieved *msg, CAN_Message_t *reply)
     {
       if (channels & (1 << channel))
 	{
-	  reply->data[4] |= (
+	  reply->data[4] |= (uint8_t)(
 	      AD8402_Write (&hspi1, channel, value, TIMEOUT_SPI1_MS) == HAL_OK ? 0 : 1) << channel;
 	}
     }
@@ -751,7 +759,7 @@ handle_writeGPIO (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator (msg->Data[2]);
   uint32_t GPIO_Pin = 1 << msg->Data[3]; // GPbIO Pin mask
   uint8_t PinState = msg->Data[4];
-  machine_GPIO_WritePin (GPIOx, GPIO_Pin, PinState);
+  machine_GPIO_WritePin (GPIOx, (uint16_t)GPIO_Pin, PinState);
   reply->data[2] = msg->Data[2];
   reply->data[3] = msg->Data[3];
   reply->data[4] = msg->Data[4];
@@ -820,17 +828,23 @@ handle_setDACValueSi_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message
 	{
 	  uint16_t value = machine_DAC_convert_V_to_DAC_value (valueSi,
 							       &afe_regulatorSettings[subdev]);
-	  switch (subdev)
+	  switch (afe_regulatorSettings[subdev].subdevice)
 	    {
 	    case AFECommandSubdevice_master:
-	      machine_DAC_set (DAC_CHANNEL_1, value);
-	      break;
+	      {
+		machine_DAC_set (DAC_CHANNEL_1, value);
+		break;
+	      }
 	    case AFECommandSubdevice_slave:
-	      machine_DAC_set (DAC_CHANNEL_2, value);
-	      break;
+	      {
+		machine_DAC_set (DAC_CHANNEL_2, value);
+		break;
+	      }
 	    default:
-	      Error_Handler ();
-	      break;
+	      {
+		Error_Handler();
+		break;
+	      }
 	    }
 	}
     }
@@ -954,11 +968,10 @@ can_execute (const s_can_msg_recieved msg)
 {
   CAN_Message_t tmp;
   uint8_t command = (uint8_t) msg.Data[0];
-  uint32_t msg_id = CAN_ID_IN_MSG;
+  uint16_t msg_id = CAN_ID_IN_MSG;
   tmp.timestamp = HAL_GetTick ();
   tmp.id = msg_id;
   tmp.data[0] = command; // Standard reply [function]
-  tmp.data[1] = 0x00;
   tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
   tmp.dlc = 8; // Default DLC
   switch ((AFECommand) command)
@@ -1262,7 +1275,7 @@ can_execute (const s_can_msg_recieved msg)
 //		get_n_latest_from_buffer (channelSettings[channel].buffer_ADC, 1, &adc_val);
 		HAL_ADC_Start (&hadc);
 		HAL_ADC_PollForConversion (&hadc, 1000);
-		adc_val.adc_value = HAL_ADC_GetValue (&hadc);
+		adc_val.adc_value = (uint16_t)HAL_ADC_GetValue (&hadc);
 		adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
 //		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
 //							     total_msg_count, channel,
@@ -1287,18 +1300,18 @@ can_execute (const s_can_msg_recieved msg)
     }
 }
 
-void __attribute__ ((optimize("-O3")))
-machine_calculate_averageValues (float *here)
-{
-  uint32_t timestamp_now = HAL_GetTick ();
-  for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
-    {
-      if (machnie_flag_averaging_enabled[i0])
-	{
-	  here[i0] = get_average_atSettings (&afe_channelSettings[i0], timestamp_now);
-	}
-    }
-}
+//void __attribute__ ((optimize("-O3")))
+//machine_calculate_averageValues (float *here)
+//{
+//  uint32_t timestamp_now = HAL_GetTick ();
+//  for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
+//    {
+//      if (machnie_flag_averaging_enabled[i0])
+//	{
+//	  here[i0] = get_average_atSettings (&afe_channelSettings[i0], timestamp_now);
+//	}
+//    }
+//}
 
 /***
  * @brief Temperature control loop.
@@ -1310,19 +1323,18 @@ void __attribute__ ((optimize("-O3")))
 machine_control (void)
 {
   /* Calculate values for DAC -- active part of the Temperature Loop */
-  for (uint8_t subdev = 0; subdev < 2; ++subdev)
+  for (uint8_t subdev = 0; subdev < AFE_NUMBER_OF_SUBDEVICES; ++subdev)
     {
       s_regulatorSettings *regulatorSettings_ptr = &afe_regulatorSettings[subdev];
-      if (!regulatorSettings_ptr->enabled)
-	{
-	  continue;
-	}
       uint32_t timestamp_ms = HAL_GetTick ();
 
-      // Process temperature loop logic
-      process_temperature_loop(regulatorSettings_ptr, timestamp_ms);
+      if (regulatorSettings_ptr->enabled)
+	{
+	  // Process temperature loop logic if active
+	  process_temperature_loop (regulatorSettings_ptr, timestamp_ms);
+	}
 
-      // Process DAC ramping logic
+      // Process DAC ramping logic active always
       process_dac_ramping(regulatorSettings_ptr, timestamp_ms);
     }
 }
@@ -1375,8 +1387,6 @@ machine_periodic_report (void)
     }
 }
 
-static uint32_t last_blink = 0;
-
 void
 machine_main (void)
 {
@@ -1388,13 +1398,12 @@ machine_main (void)
 	modify_aurt_as_test_led ();
 
 	const uint32_t dd = 25;
-	blink1 ();
-	HAL_Delay (dd);
-	blink1 ();
-	HAL_Delay (dd);
-	blink1 ();
-	HAL_Delay (dd);
-	blink1 ();
+	for (uint8_t _ = 0; _ < 10; ++_)
+	  {
+	    blink1 ();
+	    HAL_Delay (dd);
+	  }
+	HAL_GPIO_WritePin (GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
 	for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
 	  {
 	    adc_dma_buffer[i0] = 0;
