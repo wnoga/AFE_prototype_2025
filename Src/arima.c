@@ -140,8 +140,8 @@ arima_apply_ARMA (float *diff_values, size_t n, uint32_t *time_diffs,
 	      // Calculate the weight based on time difference and alpha
 	      float weight =
 		  alpha ?
-		      expf (-time_diffs[t - i] * alpha) :
-		      1.0 / (1.0 + time_diffs[t - i]); // Adjust AR effect by time gap (if alpha is 0)
+		      expf (-(float)(time_diffs[t - i]) * alpha) :
+		      1.0f / (1.0f + (float)(time_diffs[t - i])); // Adjust AR effect by time gap (if alpha is 0)
 	      // Add the weighted past value to the AR component
 	      ar_part += ar_coeffs[i - 1] * diff_values[t - i] * weight; // ar_coeffs[i - 1]
 	    }
@@ -188,17 +188,17 @@ _arima_example (int p, int d, int q)
   for (n = 0; n < MAX_DATA; ++n)
     {
       series_timestamp[n] = timestamp;
-      series_value[n] = 100.0
-	  * (0.5 + ((sin (timestamp / 1000.0) + 1.0) / 2.0) // sin(x)
-	      + 0.2 * (((float) rand () / RAND_MAX) - 0.5) * 2.0); // noise
+      series_value[n] = 100.0f
+	  * (0.5f + ((sin (timestamp / 1000.0f) + 1.0f) / 2.0f) // sin(x)
+	      + 0.2f * (((float) rand () / RAND_MAX) - 0.5f) * 2.0f); // noise
 //      series_value[n] = 100 + (rand () % 10);
       timestamp += 100 + (rand () % 10); // add noise to timestamp
     }
 
   float ar_coeffs[] =
-    { 0.1 };
+    { 0.1f };
   float ma_coeffs[] =
-    { -0.5 };
+    { -0.5f };
 
   arima_differencing (series_timestamp, series_value, n, d, diff_values, // differencing
 		      time_diffs);

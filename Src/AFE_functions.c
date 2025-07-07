@@ -85,7 +85,7 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float al
       qsort (data, N, sizeof(s_ADC_Measurement), compare_measurements);
       result =
 	  (N % 2 == 0) ?
-	      (data[N / 2 - 1].adc_value + data[N / 2].adc_value) / 2.0 : data[N / 2].adc_value;
+	      (data[N / 2 - 1].adc_value + data[N / 2].adc_value) / 2.0f : data[N / 2].adc_value;
       break;
 
     case e_average_RMS:
@@ -113,7 +113,7 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float al
 	{
 	  result *= data[i].adc_value;
 	}
-      result = pow (result, 1.0 / N);
+      result = pow (result, 1.0f / N);
       break;
 
     case e_average_TRIMMED:
@@ -422,5 +422,5 @@ get_number_of_channels (uint8_t channels_mask)
 inline uint16_t __attribute ((always_inline, optimize("-O3")))
 machine_DAC_convert_V_to_DAC_value (float V, s_regulatorSettings *regulatorSettings)
 {
-  return faxplusb (V, regulatorSettings->a_dac, regulatorSettings->b_dac);
+  return (uint16_t)roundf(faxplusb (V, regulatorSettings->a_dac, regulatorSettings->b_dac));
 }

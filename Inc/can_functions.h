@@ -41,7 +41,7 @@ typedef size_t can_bs_t;
 
 // CAN Message structure
 typedef struct __attribute__((packed)) {
-    uint32_t id;       // CAN ID
+    uint16_t id;       // CAN ID
     uint8_t data[8];   // CAN Data payload
     uint8_t dlc;       // Data Length Code
     uint32_t timestamp;// Msg timestamp, for timeout
@@ -52,7 +52,6 @@ typedef struct __attribute__((packed)) {
     CAN_Message_t buffer[CAN_BUFFER_SIZE];
     can_bs_t head;      // Index for writing new data
     can_bs_t tail;      // Index for reading data
-    can_bs_t count;     // Number of elements in the buffer
 } CANCircularBuffer_t;
 
 typedef enum
@@ -66,7 +65,7 @@ typedef enum
 typedef struct __attribute__((packed))
 {
   uint32_t timestamp;
-  uint32_t DLC;
+  uint8_t DLC;
   uint8_t Data[8];
   /* [0] -> function code,
    * ([1] & 0xF0) >> 4 -> total msgs, ([1] & 0x0F) -> msg index
@@ -89,6 +88,8 @@ HAL_StatusTypeDef configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id)
 void modify_aurt_as_test_led (void);
 void can_machine_init_0 (void);
 void can_machine (void);
+
+void CAN_TransmitCallback (CAN_HandleTypeDef *hcan);
 
 void CANCircularBuffer_enqueueMessage_data (CANCircularBuffer_t *cb, CAN_Message_t *tmp, uint8_t msg_index, uint8_t total_msg_count, uint8_t channel, uint8_t *value, uint8_t size);
 void CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Message_t *tmp, uint8_t msg_index, uint8_t total_msg_count, uint8_t channel, float *value);

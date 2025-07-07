@@ -115,12 +115,6 @@ configure_can_filter (CAN_HandleTypeDef *hcan, uint8_t own_id)
   CAN_FilterConfTypeDef sFilterConfig;
 //  CAN_FilterTypeDef sFilterConfig;
 
-// Validate receiver ID
-  if (own_id > 0xFF)
-    {
-      return HAL_ERROR;  // Invalid receiver ID
-    }
-
   // Build Filter ID to match messages from Master to this device
   uint32_t filter_id = ((0 << 10) | (own_id << 2));  // Master bit and own receiver ID
   // Master = 0, Slave = 1
@@ -182,38 +176,34 @@ CANCircularBuffer_Init (CANCircularBuffer_t *cb)
 {
   cb->head = 0;
   cb->tail = 0;
-  cb->count = 0;
-}
-
-// Check if buffer is full
-inline int8_t __attribute__ ((always_inline, optimize("-O3")))
-CANCircularBuffer_isFull (CANCircularBuffer_t *cb)
-{
-  return cb->count == CAN_BUFFER_SIZE;
 }
 
 // Check if buffer is empty
 inline int8_t __attribute__ ((always_inline, optimize("-O3")))
 CANCircularBuffer_isEmpty (CANCircularBuffer_t *cb)
 {
-  return cb->count == 0;
+  return cb->head == cb->tail;
 }
 
 // Add message to buffer
 int8_t __attribute__ ((optimize("-O3")))
 CANCircularBuffer_enqueueMessage (CANCircularBuffer_t *cb, CAN_Message_t *msg)
 {
-  if (CANCircularBuffer_isFull (cb))
+  memcpy (&cb->buffer[cb->head], msg, sizeof(*msg));
+  ++cb->head;
+  if (cb->head >= CAN_BUFFER_SIZE)
     {
-      return 0; // Buffer is full
+      cb->head = 0;
     }
-  else
+  if (cb->tail == cb->head)
     {
-      memcpy (&cb->buffer[cb->head], msg, sizeof(*msg));
-      cb->head = (cb->head + 1) % CAN_BUFFER_SIZE;
-      ++cb->count;
-      return 1;
+      ++cb->tail;
+      if (cb->tail >= CAN_BUFFER_SIZE)
+	{
+	  cb->tail = 0;
+	}
     }
+  return 1;
 }
 
 static CAN_Message_t*
@@ -231,8 +221,11 @@ CANCircularBuffer_deleteMessage (CANCircularBuffer_t *cb)
     }
   else
     {
-      cb->tail = (cb->tail + 1) % CAN_BUFFER_SIZE;
-      --cb->count;
+      ++cb->tail;
+      if (cb->tail >= CAN_BUFFER_SIZE)
+	{
+	  cb->tail = 0;
+	}
       return 1;
     }
 }
@@ -246,8 +239,11 @@ CANCircularBuffer_dequeueMessage (CANCircularBuffer_t *cb)
       return 0; // Buffer is empty
     }
   CAN_Message_t *msg = &cb->buffer[cb->tail];
-  cb->tail = (cb->tail + 1) % CAN_BUFFER_SIZE;
-  --cb->count;
+  ++cb->tail;
+  if (cb->tail >= CAN_BUFFER_SIZE)
+    {
+      cb->tail = 0;
+    }
   return msg;
 }
 
@@ -265,12 +261,6 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
   // At this point, canState == e_CANMachineState_IDLE
 
   CAN_Message_t *msg;
-  if (CANCircularBuffer_isEmpty (&canTxBuffer))
-    {
-      // No messages to send. Ensure state is IDLE (already should be).
-      // canState = e_CANMachineState_IDLE; // Redundant
-      return;
-    }
 
   msg = CANCircularBuffer_getMessage(&canTxBuffer); // Peek at the oldest message
 
@@ -405,44 +395,45 @@ can_machine (void)
 	  RESET_WINDOW_WATCHDOG,
 	  RESET_LOW_POWER
 	} ResetReason_t;
-  
-  uint32_t timestamp_ms = HAL_GetTick ();
-  tmp.timestamp = timestamp_ms;
-  tmp.id = CAN_ID_IN_MSG;
-  if (can_machine_inited_0)
-  {
-    tmp.data[0] = AFECommand_resetCAN;
-    CANCircularBuffer_enqueueMessage_data(&canTxBuffer, &tmp, 0, 1, 0x00, (uint8_t*)&timestamp_ms, sizeof(uint32_t));
-  }
-  else
-  {
-    tmp.data[0] = AFECommand_resetAll; // Standard reply [function]
-    tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
-    tmp.data[2] = RCC->CSR;
-    RCC->CSR |= RCC_CSR_RMVF;  // Set the RMVF bit to clear all reset flags
-    __DSB ();  // Ensure the flag is cleared before continuing execution
-    tmp.dlc = 3;
-    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
-    can_machine_inited_0 = 1;
-  }
+
+	uint32_t timestamp_ms = HAL_GetTick ();
+	tmp.timestamp = timestamp_ms;
+	tmp.id = CAN_ID_IN_MSG;
+	if (can_machine_inited_0)
+	  {
+	    tmp.data[0] = AFECommand_resetCAN;
+	    CANCircularBuffer_enqueueMessage_data (&canTxBuffer, &tmp, 0, 1, 0x00,
+						   (uint8_t*) &timestamp_ms, sizeof(uint32_t));
+	  }
+	else
+	  {
+	    tmp.data[0] = AFECommand_resetAll; // Standard reply [function]
+	    tmp.data[1] = get_byte_of_message_number (0, 1); // Standard number of messages 1/1
+	    tmp.data[2] = RCC->CSR;
+	    RCC->CSR |= RCC_CSR_RMVF;  // Set the RMVF bit to clear all reset flags
+	    __DSB ();  // Ensure the flag is cleared before continuing execution
+	    tmp.dlc = 3;
+	    CANCircularBuffer_enqueueMessage (&canTxBuffer, &tmp);
+	    can_machine_inited_0 = 1;
+	  }
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-	afe_can_watchdog_timestamp_ms = HAL_GetTick();
+	afe_can_watchdog_timestamp_ms = HAL_GetTick ();
 #endif
 	break;
       }
     case e_can_machine_state_idle:
       {
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-	if ((HAL_GetTick () - afe_can_watchdog_timestamp_ms)
-	    > afe_can_watchdog_timeout_ms)
+	if ((HAL_GetTick () - afe_can_watchdog_timestamp_ms) > afe_can_watchdog_timeout_ms)
 	  {
 	    NVIC_SystemReset (); // Reset if no respond
 	  }
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-	if (canState == e_CANMachineState_ERROR) {
-	  // NVIC_SystemReset (); // Reset if CAN error
-    canState = e_can_machine_state_init;
-	}
+	if (canState == e_CANMachineState_ERROR)
+	  {
+	    // NVIC_SystemReset (); // Reset if CAN error
+	    can_machine_state = e_can_machine_state_init;
+	  }
 
 	CAN_TransmitHandler (&hcan);
 	break;
@@ -458,7 +449,9 @@ can_machine (void)
 inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
 get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
 {
-  return (0xF0 & ((total_msg_count - 1) << 4)) | ((msg_index) & 0x0F); // 0xY0 - max index, 0x0Z msg index
+  return (0xF0 &
+      ((total_msg_count - 1U) << 4U)) |
+      ((msg_index) & 0x0F); // 0xY0 - max index, 0x0Z msg index
 }
 
 void
@@ -506,7 +499,7 @@ HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
 
   if (is_this_msg_for_me (hcan->pRxMsg, AFE_CAN_ID) && (hcan->pRxMsg->DLC <= 8))
     {
-      can_msg_received.DLC = hcan->pRxMsg->DLC;
+      can_msg_received.DLC = (uint8_t)hcan->pRxMsg->DLC;
       can_msg_received.timestamp = HAL_GetTick ();
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
       afe_can_watchdog_timestamp_ms = can_msg_received.timestamp;
@@ -521,4 +514,3 @@ HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
         // canState = e_CANMachineState_ERROR;
     }
 }
-
