@@ -91,12 +91,12 @@ get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N, s_ADC_Measurement
     {
       if ((timestamp_ms - cb->buffer[index].timestamp_ms) > max_dt_ms)
 	{
-	  break;
+	  return i;
 	}
       else
 	{
 	  here[i] = cb->buffer[index]; // Copy to output array
-	  index = (index == 0) ? (cb->buffer_size - 1) : (index - 1); // Decrement index
+	  index = (index != 0) ? (index - 1) : (cb->buffer_size - 1); // Decrement index
 	}
     }
   return N;

@@ -22,11 +22,11 @@ typedef enum
 
 // Expose globals for testing purposes
 extern volatile e_machine_main machine_main_status;
-extern s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
-extern s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES];
-extern s_BufferADC bufferADC[AFE_NUMBER_OF_CHANNELS];
-extern int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
-extern s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
+extern volatile s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
+extern volatile s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES];
+extern volatile s_BufferADC bufferADC[AFE_NUMBER_OF_CHANNELS];
+extern volatile int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
+extern volatile s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
 
 void enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel);
 void machine_main_init_0 (void);

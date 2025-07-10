@@ -64,6 +64,7 @@ typedef enum
 
   AFECommand_setChannelBufferSize = 0xE0,
 
+  AFECommand_setRegulator_T_opt_byMask = 0xE3,
   AFECommand_setRegulator_dT_byMask = 0xE4,
   AFECommand_setRegulator_a_dac_byMask = 0xE5,
   AFECommand_setRegulator_b_dac_byMask = 0xE6,
@@ -71,7 +72,8 @@ typedef enum
   AFECommand_setRegulator_V_opt_byMask = 0xE8,
   AFECommand_setRegulator_V_offset_byMask = 0xE9,
 
-  AFECommand_debug_machine_control = 0xF1
+  AFECommand_debug_machine_control = 0xF1,
+  AFECommand_clearRegulator_T_old = 0xF2
 } AFECommand;
 
 typedef enum

@@ -12,11 +12,11 @@
 #include <math.h>
 #include <stdbool.h>
 
-uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
+static volatile uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
 #if USE_STACK_FOR_BUFFER
 s_ADC_Measurement *adc_measurement_raw[AFE_NUMBER_OF_CHANNELS];
 #else
-s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
+volatile s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
 #endif
 
 //PA0     ------> ADC_IN0
@@ -40,18 +40,18 @@ typedef enum
   e_adc_channel_TEMP_LOCAL
 } e_adc_channel;
 
-s_BufferADC bufferADC[AFE_NUMBER_OF_CHANNELS];
+volatile s_BufferADC bufferADC[AFE_NUMBER_OF_CHANNELS];
 
-s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
+volatile s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
 
-s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
+volatile s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
 
 volatile e_machine_main machine_main_status = e_machine_main_init;
 
 uint32_t periodic_send_info_period_ms = 1500;
 uint32_t periodic_send_info_start_ms = 0;
 
-int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
+volatile int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
 int8_t machine_temperatureLoop_enabled[2];
 
 void
@@ -1190,6 +1190,12 @@ can_execute (const s_can_msg_recieved msg)
 	break;
       }
 
+    case AFECommand_setRegulator_T_opt_byMask:
+      {
+	handle_set_regulator_property (&msg, &tmp, offsetof(s_regulatorSettings, T_opt),
+				       sizeof(float));
+	break;
+      }
     case AFECommand_setRegulator_dT_byMask:
       {
 	handle_set_regulator_property (&msg, &tmp, offsetof(s_regulatorSettings, dT),
@@ -1287,6 +1293,11 @@ can_execute (const s_can_msg_recieved msg)
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, msg_index,
 						       total_msg_count, forThisChannels,
 						       tmp.timestamp);
+	break;
+      }
+    case AFECommand_clearRegulator_T_old:
+      {
+	handle_set_regulator_property(&msg, &tmp, offsetof(s_regulatorSettings, T_old), sizeof(float));
 	break;
       }
     default:

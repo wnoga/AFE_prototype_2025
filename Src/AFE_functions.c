@@ -93,7 +93,7 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float al
 	{
 	  sum += data[i].adc_value * data[i].adc_value;
 	}
-      result = sqrt (sum / N);
+      result = sqrtf (sum / N);
       break;
 
     case e_average_HARMONIC:
@@ -113,7 +113,7 @@ calculate_average (s_ADC_Measurement *data, size_t N, e_average method, float al
 	{
 	  result *= data[i].adc_value;
 	}
-      result = pow (result, 1.0f / N);
+      result = powf (result, 1.0f / N);
       break;
 
     case e_average_TRIMMED:
@@ -281,7 +281,8 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	  }
 	case e_average_WEIGHTED_EXPONENTIAL:
 	  {
-	    float r = fabsf (timestamp_ms - ptr->timestamp_ms);
+	    uint32_t ru = timestamp_ms - ptr->timestamp_ms;
+	    float r = fabsf((float)ru);
 	    float weight = expf (-r * alpha);
 	    sum += (weight * value);
 	    weight_sum += weight;
