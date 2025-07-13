@@ -480,7 +480,9 @@ static void MX_DAC_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN DAC_Init 2 */
-
+  /* Set DAC values to minimum(reversed) */
+  HAL_DAC_SetValue (&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, AFE_DAC_START);
+  HAL_DAC_SetValue (&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, AFE_DAC_START);
   /* USER CODE END DAC_Init 2 */
 
 }

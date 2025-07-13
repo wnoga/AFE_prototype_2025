@@ -12,11 +12,11 @@
 #include <math.h>
 #include <stdbool.h>
 
-static volatile uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
+static uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
 #if USE_STACK_FOR_BUFFER
 s_ADC_Measurement *adc_measurement_raw[AFE_NUMBER_OF_CHANNELS];
 #else
-volatile s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
+static s_ADC_Measurement adc_measurement_raw[AFE_NUMBER_OF_CHANNELS][ADC_MEASUREMENT_RAW_SIZE_MAX];
 #endif
 
 //PA0     ------> ADC_IN0
@@ -40,19 +40,13 @@ typedef enum
   e_adc_channel_TEMP_LOCAL
 } e_adc_channel;
 
-volatile s_BufferADC bufferADC[AFE_NUMBER_OF_CHANNELS];
+static s_BufferADC bufferADC[AFE_NUMBER_OF_CHANNELS];
 
-volatile s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
+static s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
 
-volatile s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
+static s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
 
-volatile e_machine_main machine_main_status = e_machine_main_init;
-
-uint32_t periodic_send_info_period_ms = 1500;
-uint32_t periodic_send_info_start_ms = 0;
-
-volatile int8_t machnie_flag_averaging_enabled[AFE_NUMBER_OF_CHANNELS];
-int8_t machine_temperatureLoop_enabled[2];
+static e_machine_main machine_main_status = e_machine_main_init;
 
 void
 update_buffer_by_channelSettings (s_channelSettings *channelSettings)
@@ -332,8 +326,6 @@ machine_main_init_0 (void)
       afe_channelSettings[i0].period_ms = 0;
       afe_channelSettings[i0].period_ms_last = 0;
 
-      machnie_flag_averaging_enabled[i0] = 0;
-
       init_buffer (&bufferADC[i0], &adc_measurement_raw[i0][0], ADC_MEASUREMENT_RAW_SIZE_MAX,
       ADC_MEASUREMENT_RAW_DEFAULT_DT_MS);
     }
@@ -341,13 +333,19 @@ machine_main_init_0 (void)
 
   for (uint8_t i0 = 0; i0 < 2; ++i0)
     {
+      memset(&afe_regulatorSettings[i0],0,sizeof(s_regulatorSettings));
+#if AFE_REGULATOR_DEFAULT_RAMP_ENABLED
+      afe_regulatorSettings[i0].ramp_enabled = AFE_REGULATOR_DEFAULT_RAMP_ENABLED;
+#endif
+#if AFE_REGULATOR_SET_DEFAULT_PARAMS
       afe_regulatorSettings[i0].dV_dT = AFE_REGULATOR_DEFAULT_dV_dT;
       afe_regulatorSettings[i0].T_opt = AFE_REGULATOR_DEFAULT_T0;
       afe_regulatorSettings[i0].V_opt = AFE_REGULATOR_DEFAULT_U0;
       afe_regulatorSettings[i0].V_offset = AFE_REGULATOR_DEFAULT_U_offset; // Voltage offset
       afe_regulatorSettings[i0].dT = AFE_REGULATOR_DEFAULT_dT; // delta Temperature when new DAC value can be set
       afe_regulatorSettings[i0].T_old = AFE_REGULATOR_DEFAULT_T_old;
-      afe_regulatorSettings[i0].enabled = 0;
+#endif // AFE_REGULATOR_SET_DEFAULT_PARAMS
+#if AFE_REGULATOR_SET_DEFAULT_RAMP
 #if USE_SMALLER_STEPS_NEAR_DAC_TARGET
       afe_regulatorSettings[i0].ramp_bit_step = AFE_REGULATOR_DEFAULT_ramp_bit_step;
 #else
@@ -360,6 +358,7 @@ machine_main_init_0 (void)
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits_old = 0x0FFF & (~AFE_DAC_START);
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+#endif // AFE_REGULATOR_SET_DEFAULT_RAMP
     }
 
   /* Set channel for temperature */
@@ -456,6 +455,10 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
   // DAC ramping is disabled, do nothing.
   return;
 #else // HARDWARE_CONTROL_TEMPERATURE_LOOP_RAMP_BIT_DISABLED
+  if (!rptr->ramp_enabled)
+    {
+      return;
+    }
   if ((timestamp_ms - rptr->ramp_bit_step_timestamp_old_ms) >= rptr->ramp_bit_step_every_ms)
     {
       uint16_t d_bit = rptr->ramp_bit_step;
@@ -615,7 +618,7 @@ handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   enqueueSubdeviceStatus(reply, masked_channel);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+static inline void __attribute__((always_inline, optimize("-Os")))
 handle_getSerialNumber (CAN_Message_t *reply)
 {
   reply->id |= e_CANIdFunctionCode_multipleRead & 0b11;
@@ -628,7 +631,7 @@ handle_getSerialNumber (CAN_Message_t *reply)
     }
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+static inline void __attribute__((always_inline, optimize("-Os")))
 handle_getVersion (CAN_Message_t *reply)
 {
   reply->dlc = 2 + verArrLen;
@@ -636,7 +639,7 @@ handle_getVersion (CAN_Message_t *reply)
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+static inline void __attribute__((always_inline, optimize("-Os")))
 handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   HAL_ADC_Start_DMA (&hadc,
@@ -722,7 +725,7 @@ handle_transmitSPIData (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+static inline void __attribute__((always_inline, optimize("-Os")))
 handle_setAD8402Value (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -897,7 +900,8 @@ handle_set_channel_property (const s_can_msg_recieved *msg, CAN_Message_t *reply
     {
       if (channelMask & (1 << channel))
 	{
-	  memcpy ((uint8_t*) &afe_channelSettings[channel] + offset, &msg->Data[3], size);
+	  uint8_t *dst = (uint8_t *)&afe_channelSettings[channel];
+	  memcpy(dst + offset, &msg->Data[3], size);
 	  if (reset_buffer)
 	    {
 	      update_buffer_by_channelSettings (&afe_channelSettings[channel]);
@@ -920,7 +924,8 @@ handle_set_regulator_property (const s_can_msg_recieved *msg, CAN_Message_t *rep
     {
       if (subdevMask & (1 << subdev))
 	{
-	  memcpy ((uint8_t*) &afe_regulatorSettings[subdev] + offset, &msg->Data[3], size);
+	  uint8_t *dst = (uint8_t *)&afe_regulatorSettings[subdev];
+	  memcpy(dst + offset, &msg->Data[3], size);
 	}
     }
   // Echo the command back as confirmation
@@ -931,7 +936,7 @@ handle_set_regulator_property (const s_can_msg_recieved *msg, CAN_Message_t *rep
 
 /* --- Unknown Command Handler --- */
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+static inline void __attribute__((always_inline, optimize("-Os")))
 handle_unknown_command (CAN_Message_t *reply)
 {
   reply->data[0] = 0xFF;
@@ -949,7 +954,7 @@ handle_unknown_command (CAN_Message_t *reply)
 /***
  */
 static uint32_t value0;
-void __attribute__ ((optimize("-O3")))
+void __attribute__ ((optimize("-Os")))
 can_execute (const s_can_msg_recieved msg)
 {
   CAN_Message_t tmp;
@@ -1109,7 +1114,7 @@ can_execute (const s_can_msg_recieved msg)
 	handle_setDACRampOneBytePerMillisecond (&msg, &tmp);
 	break;
       }
-    case AFECOmmand_setDACTargetSi_bySubdeviceMask:
+    case AFECommand_setDACTargetSi_bySubdeviceMask:
       {
 	handle_setDACTargetSi_bySubdeviceMask(&msg, &tmp);
 	break;
@@ -1187,6 +1192,13 @@ can_execute (const s_can_msg_recieved msg)
 	    &msg, &tmp,
 	    offsetof(s_channelSettings, buffer_ADC) + offsetof(s_BufferADC, buffer_size),
 	    sizeof(uint32_t), true);
+	break;
+      }
+
+    case AFECommand_setRegulator_ramp_enabled_byMask:
+      {
+	handle_set_regulator_property (&msg, &tmp, offsetof(s_regulatorSettings, ramp_enabled),
+				       sizeof(int8_t));
 	break;
       }
 

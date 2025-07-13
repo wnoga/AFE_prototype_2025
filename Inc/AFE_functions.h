@@ -49,7 +49,7 @@ typedef enum
   AFECommand_stopTemperatureLoopForAllChannels = 0xC4,
   AFECommand_setDAC_bySubdeviceMask = 0xC5,
   AFECommand_setDACRampOneBytePerMillisecond_ms = 0xC6,
-  AFECOmmand_setDACTargetSi_bySubdeviceMask = 0xC7,
+  AFECommand_setDACTargetSi_bySubdeviceMask = 0xC7,
 
   AFECommand_setAveragingMode_byMask = 0xD0,
   AFECommand_setAveragingAlpha_byMask = 0xD1,
@@ -64,6 +64,7 @@ typedef enum
 
   AFECommand_setChannelBufferSize = 0xE0,
 
+  AFECommand_setRegulator_ramp_enabled_byMask = 0xE1,
   AFECommand_setRegulator_T_opt_byMask = 0xE3,
   AFECommand_setRegulator_dT_byMask = 0xE4,
   AFECommand_setRegulator_a_dac_byMask = 0xE5,
@@ -178,6 +179,7 @@ typedef struct
   uint16_t ramp_curent_voltage_set_bits;
   uint16_t ramp_target_voltage_set_bits;
   int8_t ramp_target_reached;
+  int8_t ramp_enabled;
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
   uint16_t ramp_target_voltage_set_bits_old; // prevent sending many times msg when is not change in DAC target value
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL

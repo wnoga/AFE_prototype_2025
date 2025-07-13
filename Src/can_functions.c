@@ -384,17 +384,17 @@ can_machine (void)
 	CAN_Message_t tmp;
 	// uint8_t command = AFECommand_resetAll;
 	// uint32_t msg_id = CAN_ID_IN_MSG;
-	typedef enum
-	{
-	  RESET_UNKNOWN = 0,
-	  RESET_POWER_ON,
-	  RESET_PIN,
-	  RESET_BROWN_OUT,
-	  RESET_SOFTWARE,
-	  RESET_WATCHDOG,
-	  RESET_WINDOW_WATCHDOG,
-	  RESET_LOW_POWER
-	} ResetReason_t;
+//	typedef enum
+//	{
+//	  RESET_UNKNOWN = 0,
+//	  RESET_POWER_ON,
+//	  RESET_PIN,
+//	  RESET_BROWN_OUT,
+//	  RESET_SOFTWARE,
+//	  RESET_WATCHDOG,
+//	  RESET_WINDOW_WATCHDOG,
+//	  RESET_LOW_POWER
+//	} ResetReason_t;
 
 	uint32_t timestamp_ms = HAL_GetTick ();
 	tmp.timestamp = timestamp_ms;
