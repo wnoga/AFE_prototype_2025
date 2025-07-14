@@ -1444,21 +1444,27 @@ machine_periodic_report (void)
 	      /* Get last data */
 	      if (get_n_latest_from_buffer (afe_channelSettings[channel].buffer_ADC, 1, &adc_val))
 		{
-		  adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
+		  /* Value in ADC */
+		  adc_value_real = adc_val.adc_value;
 		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 0,
 							       total_msg_count, channel_mask,
 							       &adc_value_real);
+		  /* Value in SI */
+		  adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
+		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 1,
+							       total_msg_count, channel_mask,
+							       &adc_value_real);
 		  /* Add last data timestamp */
-		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1,
+		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 2,
 								 total_msg_count, channel_mask,
 								 adc_val.timestamp_ms);
 		  /* Get average data */
 		  adc_value_real = get_average_atSettings (ptr, timestamp);
-		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 2,
+		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 3,
 							       total_msg_count, channel_mask,
 							       &adc_value_real);
 		  /* Add calculation timestamp */
-		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 3,
+		  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 4,
 								 total_msg_count, channel_mask,
 								 timestamp);
 
