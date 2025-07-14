@@ -384,7 +384,7 @@ machine_main_init_0 (void)
  * @param timestamp_ms Current system timestamp in milliseconds.
  */
 static inline void __attribute__((always_inline, optimize("-O3")))
-process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t timestamp_ms)
+process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 {
 #if HARDWARE_CONTROL_TEMPERATURE_LOOP_DISABLED
   // Temperature loop is disabled, do nothing.
@@ -393,7 +393,7 @@ process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t t
 
   // 1. Get the current temperature from the sensor.
   float current_temperature = get_average_atSettings (
-      regulatorSettings_ptr->temperature_channelSettings_ptr, timestamp_ms);
+      rptr->temperature_channelSettings_ptr, timestamp_ms);
 
   // 2. Validate the temperature reading.
   if (isnan(current_temperature))
@@ -403,8 +403,8 @@ process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t t
     }
 
   // 3. Check if the temperature has changed significantly (outside the dead-band).
-  float temperature_delta = fabsf (current_temperature - regulatorSettings_ptr->T_old);
-  if (temperature_delta < regulatorSettings_ptr->dT)
+  float temperature_delta = fabsf (current_temperature - rptr->T_old);
+  if (temperature_delta < rptr->dT)
     {
       // No significant change, no adjustment needed.
       return;
@@ -412,33 +412,33 @@ process_temperature_loop (s_regulatorSettings *regulatorSettings_ptr, uint32_t t
 
   // 4. Calculate the new target voltage and corresponding DAC value.
   float new_target_voltage = get_voltage_for_SiPM_x (current_temperature,
-                                                           regulatorSettings_ptr);
+						     rptr);
   uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (
-      new_target_voltage, regulatorSettings_ptr);
+      new_target_voltage, rptr);
 
   // 5. Update the regulator's state with the new values.
   // Set the target for the DAC ramp function.
-  regulatorSettings_ptr->ramp_target_voltage_set_bits = new_target_dac_bits;
+  rptr->ramp_target_voltage_set_bits = new_target_dac_bits;
 
   // Update status variables for monitoring.
-  regulatorSettings_ptr->T = current_temperature;
+  rptr->T = current_temperature;
 //  regulatorSettings_ptr->V = new_target_voltage;
-  regulatorSettings_ptr->V_target = new_target_voltage;
+  rptr->V_target = new_target_voltage;
 
   // Update the last-seen temperature for the next dead-band check.
-  regulatorSettings_ptr->T_old = current_temperature;
+  rptr->T_old = current_temperature;
 
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
   // 6. Send a debug message via CAN if the target DAC value has changed.
-  if (new_target_dac_bits != regulatorSettings_ptr->ramp_target_voltage_set_bits_old)
+  if (new_target_dac_bits != rptr->ramp_target_voltage_set_bits_old)
     {
       CAN_Message_t tmp; // Local message for debug
       tmp.id = CAN_ID_IN_MSG;
       tmp.timestamp = HAL_GetTick (); // for timeout
       tmp.data[0] = AFECommand_debug_machine_control;
-      enqueueSubdeviceStatus(&tmp, regulatorSettings_ptr->subdevice);
+      enqueueSubdeviceStatus(&tmp, rptr->subdevice);
     }
-  regulatorSettings_ptr->ramp_target_voltage_set_bits_old = new_target_dac_bits;
+  rptr->ramp_target_voltage_set_bits_old = new_target_dac_bits;
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
 }
 
@@ -706,6 +706,58 @@ handle_getSensorDataSi_average_byMask (const s_can_msg_recieved *msg, CAN_Messag
 						 forThisChannels, reply->timestamp);
 }
 
+static inline void __attribute__((always_inline, optimize("-O3")))
+handle_getSensorDataBytes_last_byMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
+{
+  uint8_t channels = msg->Data[2];
+  s_ADC_Measurement adc_val;
+  float adc_value_real;
+  uint8_t total_msg_count = get_number_of_channels (channels) + 1; // Channels + timestamp
+  uint8_t msg_index = 0;
+  uint8_t forThisChannels = 0x00;
+  for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
+    {
+      if (channels & (1 << channel)) // loop over channel mask
+	{
+	  get_n_latest_from_buffer (afe_channelSettings[channel].buffer_ADC, 1, &adc_val);
+	  adc_value_real = adc_val.adc_value; // Send bytes as float
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, msg_index,
+						       total_msg_count, 1 << channel,
+						       &adc_value_real);
+	  forThisChannels |= (1 << channel);
+	  ++msg_index;
+	}
+    }
+  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, msg_index, total_msg_count,
+						 forThisChannels, reply->timestamp);
+}
+
+static inline void __attribute__((always_inline, optimize("-O3")))
+handle_getSensorDataBytes_average_byMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
+{
+  uint8_t channels = msg->Data[2];
+  float adc_value_real;
+  uint8_t total_msg_count = get_number_of_channels (channels) + 1;
+  uint8_t msg_index = 0;
+  uint8_t forThisChannels = 0x00;
+  for (uint8_t channel = 0; channel < AFE_NUMBER_OF_CHANNELS; ++channel)
+    {
+      if (channels & (1 << channel)) // loop over channel mask
+	{
+	  s_channelSettings *a = &afe_channelSettings[channel];
+	  adc_value_real = get_average_from_buffer (a->buffer_ADC, a->max_N, reply->timestamp,
+						    a->max_dt_ms, a->averaging_method, a->alpha,
+						    a->multiplicator);
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, msg_index,
+						       total_msg_count, 1 << channel,
+						       &adc_value_real);
+	  forThisChannels |= (1 << channel);
+	  ++msg_index;
+	}
+    }
+  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, msg_index, total_msg_count,
+						 forThisChannels, reply->timestamp);
+}
 /* --- Hardware Control Command Handlers --- */
 
 static inline void __attribute__((always_inline, optimize("-O3")))
@@ -1030,6 +1082,16 @@ can_execute (const s_can_msg_recieved msg)
       }
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]  */
     case AFECommand_getSensorDataSi_average_byMask:
+      {
+	handle_getSensorDataBytes_average_byMask (&msg, &tmp);
+	break;
+      }
+    case AFECommand_getSensorDataBytes_last_byMask:
+      {
+	handle_getSensorDataBytes_last_byMask (&msg, &tmp);
+	break;
+      }
+    case AFECommand_getSensorDataBytes_average_byMask:
       {
 	handle_getSensorDataSi_average_byMask (&msg, &tmp);
 	break;

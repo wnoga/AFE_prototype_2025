@@ -166,7 +166,7 @@ next_index (size_t i, size_t i_0, size_t N, size_t buffer_size, uint8_t backward
  *
  * @param cb Pointer to the circular buffer containing ADC measurements.
  */
-static float __attribute__ ((optimize("-O3")))
+float __attribute__ ((optimize("-O3")))
 get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms,
 			 e_average method, float alpha, float multiplicator)
 {

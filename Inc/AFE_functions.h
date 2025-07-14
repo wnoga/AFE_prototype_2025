@@ -29,7 +29,9 @@ typedef enum
   AFECommand_getSensorDataSi_last_byMask = 0x30,
   AFECommand_getSensorDataSi_average_byMask = 0x31,
 
-//  AFECommand_getSensorDataSiAndTimestamp_average_byMask = 0x3B,
+  AFECommand_getSensorDataBytes_last_byMask = 0x32,
+  AFECommand_getSensorDataBytes_average_byMask = 0x33,
+
   AFECommand_getSensorDataSi_periodic = 0x3F,
 
   AFECommand_setSensorDataSi_periodic_last = 0x40,
@@ -189,6 +191,7 @@ typedef struct
 } s_regulatorSettings;
 
 
+float get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms, e_average method, float alpha, float multiplicator);
 float get_average_atSettings (s_channelSettings *a, uint32_t timestamp);
 float get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings);
 float faxplusb (float value, float a, float b);
