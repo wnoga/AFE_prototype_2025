@@ -548,7 +548,7 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 void
 enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 {
-  const uint8_t msg_count_per_subdev = 8;
+  const uint8_t msg_count_per_subdev = 11;
   uint8_t total_msg_count = msg_count_per_subdev;
   if (AFECommandSubdevice_both == (masked_channel & AFECommandSubdevice_both))
     {
@@ -567,26 +567,39 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 	  // Voltage
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 0 + cnt,
 						       total_msg_count, subdev, &rs->V);
-	  // Target Voltage
+	  // Voltage in bytes
+	  float tmp_float = tmp_adc.adc_value;
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 1 + cnt,
-						       total_msg_count, subdev, &rs->V_target);
-	  // Average temperature
+						       total_msg_count, subdev, &tmp_float);
+	  // Target Voltage
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 2 + cnt,
-						       total_msg_count, subdev, &rs->T);
-	  // Old temperature
+						       total_msg_count, subdev, &rs->V_target);
+	  // Target Voltage in bytes
+	  tmp_float = rs->ramp_target_voltage_set_bits;
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 3 + cnt,
+						       total_msg_count, subdev, &tmp_float);
+	  // Average temperature
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 4 + cnt,
+						       total_msg_count, subdev, &rs->T);
+	  // Last temperature in bytes
+	  get_n_latest_from_buffer(rs->temperature_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
+	  tmp_float = tmp_adc.adc_value;
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 5 + cnt,
+						       total_msg_count, subdev, &tmp_float);
+	  // Old temperature
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 6 + cnt,
 						       total_msg_count, subdev, &rs->T_old);
 	  // V Offset
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 4 + cnt,
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 7 + cnt,
 						       total_msg_count, subdev, &rs->V_offset);
 	  // Enabled?
-	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 5 + cnt, total_msg_count,
+	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 8 + cnt, total_msg_count,
 						 subdev, (uint8_t*) &rs->enabled, 1);
 	  // Ramp target reached?
-	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 6 + cnt, total_msg_count,
+	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 9 + cnt, total_msg_count,
 						 subdev, (uint8_t*) &rs->ramp_target_reached, 1);
 	  // Timestamp
-	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, 7 + cnt,
+	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, 10 + cnt,
 							 total_msg_count, subdev,
 							 rs->ramp_bit_step_timestamp_old_ms);
 	  cnt += msg_count_per_subdev;
@@ -1444,13 +1457,13 @@ machine_periodic_report (void)
 	      /* Get last data */
 	      if (get_n_latest_from_buffer (afe_channelSettings[channel].buffer_ADC, 1, &adc_val))
 		{
-		  /* Value in ADC */
-		  adc_value_real = adc_val.adc_value;
+		  /* Value in SI */
+		  adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
 		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 0,
 							       total_msg_count, channel_mask,
 							       &adc_value_real);
-		  /* Value in SI */
-		  adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
+		  /* Value in ADC */
+		  adc_value_real = adc_val.adc_value;
 		  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, 1,
 							       total_msg_count, channel_mask,
 							       &adc_value_real);
