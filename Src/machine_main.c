@@ -653,17 +653,25 @@ handle_getVersion (CAN_Message_t *reply)
 }
 
 static inline void __attribute__((always_inline, optimize("-Os")))
+_startADC (uint32_t ARR)
+{
+  HAL_ADC_Start_DMA (&hadc, (uint32_t*) &adc_dma_buffer[0],
+  AFE_NUMBER_OF_CHANNELS);
+  HAL_TIM_Base_Start (&htim1);
+  if (ARR == 0)
+    {
+      ARR = 50000 - 1;
+    }
+  htim1.Instance->ARR = ARR;
+}
+
+static inline void __attribute__((always_inline, optimize("-Os")))
 handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
-  HAL_ADC_Start_DMA (&hadc,
-		     (uint32_t*)&adc_dma_buffer[0],
-		     AFE_NUMBER_OF_CHANNELS);
-  HAL_TIM_Base_Start (&htim1);
-  htim1.Instance->ARR = 50000 - 1;
-  reply->data[2] = msg->Data[2]; // For channels
-  reply->data[3] = msg->Data[3]; // Enabled
-  reply->data[4] = 0x00;	   // Error
-  reply->dlc = 5;
+  uint32_t ms = 0;
+  memcpy((uint8_t*)&ms,&msg->Data[3],sizeof(uint32_t));
+  _startADC(ms);
+  memcpy(&reply->data[0],&msg->Data[0],msg->DLC);
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
@@ -1488,6 +1496,17 @@ machine_periodic_report (void)
     }
 }
 
+#if MACHINE_DEBUG_RUN
+static void
+machine_debug_run (void)
+{
+#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+  afe_can_watchdog_timestamp_ms = HAL_GetTick();
+#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+
+}
+#endif
+
 void
 machine_main (void)
 {
@@ -1512,6 +1531,15 @@ machine_main (void)
 //#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 //	main_machine_soft_watchdog_timestamp_ms = HAL_GetTick();
 //#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
+#if MACHINE_DEBUG_RUN
+	_startADC (0);
+	uint16_t dac_value_master = 3000;
+	uint16_t dac_value_slave = 3000;
+	HAL_DAC_Start (&hdac, DAC_CHANNEL_1);
+	HAL_DAC_Start (&hdac, DAC_CHANNEL_2);
+	HAL_DAC_SetValue (&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value_master);
+	HAL_DAC_SetValue (&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dac_value_slave);
+#endif
 	break;
       }
     case e_machine_main_idle:
@@ -1525,7 +1553,10 @@ machine_main (void)
 	    /* Execute command */
 	    can_execute (can_msg_received);
 	  }
-
+#if MACHINE_DEBUG_RUN
+	machine_debug_run ();
+	break;
+#endif
 	machine_control ();
 	machine_periodic_report ();
 	break;
