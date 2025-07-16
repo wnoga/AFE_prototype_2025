@@ -227,6 +227,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
     /* ADC1 DMA Init */
+    __HAL_RCC_DMA1_CLK_ENABLE();
     /* ADC Init */
     hdma_adc.Instance = DMA1_Channel1;
     hdma_adc.Init.Direction = DMA_PERIPH_TO_MEMORY;

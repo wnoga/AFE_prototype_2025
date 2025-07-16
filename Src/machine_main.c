@@ -12,6 +12,12 @@
 #include <math.h>
 #include <stdbool.h>
 
+#if AFE_ADC_SOFT_LAUNCHED
+static int8_t afe_adc_soft_active = 0;
+static uint32_t afe_adc_soft_timestamp_ms = 0;
+static uint32_t afe_adc_soft_period_ms = 500;
+#endif
+
 static uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
 #if USE_STACK_FOR_BUFFER
 s_ADC_Measurement *adc_measurement_raw[AFE_NUMBER_OF_CHANNELS];
@@ -652,17 +658,54 @@ handle_getVersion (CAN_Message_t *reply)
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-Os")))
-_startADC (uint32_t ARR)
+static HAL_StatusTypeDef
+machine_set_tim_period_ms(TIM_HandleTypeDef *htim, uint32_t period_ms)
 {
-  HAL_ADC_Start_DMA (&hadc, (uint32_t*) &adc_dma_buffer[0],
-  AFE_NUMBER_OF_CHANNELS);
-  HAL_TIM_Base_Start (&htim1);
-  if (ARR == 0)
+    if (period_ms == 0)
     {
-      ARR = 50000 - 1;
+        return HAL_ERROR;
     }
-  htim1.Instance->ARR = ARR;
+
+    const uint32_t tim_clk = 48000000; // From SystemClock_Config()
+    // Calculate the total number of timer clock cycles for the desired period.
+    const uint64_t total_cycles = (uint64_t)period_ms * (tim_clk / 1000);
+
+    // The product of (PSC+1) and (ARR+1) must be <= 2^32
+    if (total_cycles > 0x100000000ULL)
+    {
+        return HAL_ERROR; // Period is too long to configure.
+    }
+
+    // Strategy 1: Attempt to use a prescaler that gives a 1 MHz counter clock (1 us resolution).
+    // This is ideal for common, shorter periods.
+    uint32_t psc_candidate = (tim_clk / 1000000) - 1; // Should be 47 for 48MHz clock
+    if (psc_candidate < 65536)
+    {
+        uint64_t period_candidate_plus_1 = total_cycles / (psc_candidate + 1);
+        if ((period_candidate_plus_1 > 0) && (period_candidate_plus_1 <= 65536) && (total_cycles % (psc_candidate + 1) == 0))
+        {
+            htim->Instance->PSC = psc_candidate;
+            htim->Instance->ARR = period_candidate_plus_1 - 1;
+            return HAL_OK;
+        }
+    }
+
+    // Strategy 2: If the first strategy fails, search for the smallest valid prescaler
+    // to maximize the period register for best resolution.
+    uint32_t psc_plus_1 = (total_cycles + 65535) / 65536; // ceiling division
+    if (psc_plus_1 == 0) { psc_plus_1 = 1; }
+
+    while (((total_cycles % psc_plus_1) != 0) && (psc_plus_1 <= 65536)) {
+        psc_plus_1++;
+    }
+
+    if (psc_plus_1 <= 65536) {
+        htim->Instance->PSC = psc_plus_1 - 1;
+        htim->Instance->ARR = (total_cycles / psc_plus_1) - 1;
+        return HAL_OK;
+    }
+
+    return HAL_ERROR; // No suitable combination found
 }
 
 static inline void __attribute__((always_inline, optimize("-Os")))
@@ -670,7 +713,17 @@ handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint32_t ms = 0;
   memcpy((uint8_t*)&ms,&msg->Data[3],sizeof(uint32_t));
-  _startADC(ms);
+  HAL_ADC_Start_DMA (&hadc, (uint32_t*) &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
+#if AFE_ADC_SOFT_LAUNCHED
+  afe_adc_soft_active = 1;
+  afe_adc_soft_period_ms = ms;
+  afe_adc_soft_timestamp_ms = HAL_GetTick();
+#else // AFE_ADC_SOFT_LAUNCHED
+#if AFE_ADC_HARD_BY_TIMER
+  machine_set_tim_period_ms(&htim1, ms);
+  HAL_TIM_Base_Start(&htim1);
+#endif // AFE_ADC_HARD_BY_TIMER
+#endif // AFE_ADC_SOFT_LAUNCHED
   memcpy(&reply->data[0],&msg->Data[0],msg->DLC);
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
@@ -1544,6 +1597,32 @@ machine_main (void)
       }
     case e_machine_main_idle:
       {
+#if AFE_ADC_SOFT_LAUNCHED
+	if (afe_adc_soft_active)
+	  {
+	    if ((HAL_GetTick () - afe_adc_soft_timestamp_ms) >= afe_adc_soft_period_ms)
+	      {
+		afe_adc_soft_timestamp_ms = HAL_GetTick ();
+		s_ADC_Measurement _adc;
+		_adc.timestamp_ms = afe_adc_soft_timestamp_ms;
+		for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
+		  {
+		    if (HAL_ADC_Start (&hadc) != HAL_OK)
+		      {
+			Error_Handler();
+		      }
+
+		    if (HAL_ADC_PollForConversion (&hadc, 100) != HAL_OK)
+		      {
+			Error_Handler();
+		      }
+
+		    _adc.adc_value = (uint16_t)HAL_ADC_GetValue (&hadc);
+		    add_to_buffer (&bufferADC[i], &_adc);
+		  }
+	      }
+	  }
+#endif
 	/* Update CAN machine */
 	can_machine ();
 	/* Check if any new CAN message received */
