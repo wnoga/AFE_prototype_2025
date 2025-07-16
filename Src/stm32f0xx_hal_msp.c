@@ -51,6 +51,7 @@
 
 extern void _Error_Handler(char *, int);
 /* USER CODE BEGIN 0 */
+#include "settings.h"
 extern DMA_HandleTypeDef hdma_adc;
 /* USER CODE END 0 */
 /**
@@ -226,6 +227,8 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+#if AFE_ADC_SOFT_LAUNCHED
+#else
     /* ADC1 DMA Init */
     __HAL_RCC_DMA1_CLK_ENABLE();
     /* ADC Init */
@@ -249,7 +252,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
   /* USER CODE END ADC1_MspInit 1 */
-
+#endif
   }
 
 }

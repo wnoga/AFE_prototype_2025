@@ -713,12 +713,12 @@ handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint32_t ms = 0;
   memcpy((uint8_t*)&ms,&msg->Data[3],sizeof(uint32_t));
-  HAL_ADC_Start_DMA (&hadc, (uint32_t*) &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
 #if AFE_ADC_SOFT_LAUNCHED
   afe_adc_soft_active = 1;
   afe_adc_soft_period_ms = ms;
   afe_adc_soft_timestamp_ms = HAL_GetTick();
 #else // AFE_ADC_SOFT_LAUNCHED
+  HAL_ADC_Start_DMA (&hadc, (uint32_t*) &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
 #if AFE_ADC_HARD_BY_TIMER
   machine_set_tim_period_ms(&htim1, ms);
   HAL_TIM_Base_Start(&htim1);
