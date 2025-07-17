@@ -16,9 +16,11 @@
 static int8_t afe_adc_soft_active = 0;
 static uint32_t afe_adc_soft_timestamp_ms = 0;
 static uint32_t afe_adc_soft_period_ms = 500;
+static int8_t afe_adc_i = 0;
+static int8_t afe_adc_soft_started = 0;
 #endif
 
-static uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
+volatile uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
 #if USE_STACK_FOR_BUFFER
 s_ADC_Measurement *adc_measurement_raw[AFE_NUMBER_OF_CHANNELS];
 #else
@@ -187,7 +189,6 @@ machine_DAC_set (s_regulatorSettings *rptr, uint16_t value)
     }
 }
 
-
 //void
 //machine_DAC_set_si (uint8_t channel, float voltage)
 //{
@@ -339,7 +340,7 @@ machine_main_init_0 (void)
 
   for (uint8_t i0 = 0; i0 < 2; ++i0)
     {
-      memset(&afe_regulatorSettings[i0],0,sizeof(s_regulatorSettings));
+      memset (&afe_regulatorSettings[i0], 0, sizeof(s_regulatorSettings));
 #if AFE_REGULATOR_DEFAULT_RAMP_ENABLED
       afe_regulatorSettings[i0].ramp_enabled = AFE_REGULATOR_DEFAULT_RAMP_ENABLED;
 #endif
@@ -357,7 +358,8 @@ machine_main_init_0 (void)
 #else
       afe_regulatorSettings[i0].ramp_bit_step = 1;
 #endif
-      afe_regulatorSettings[i0].ramp_bit_step_every_ms = AFE_REGULATOR_DEFAULT_ramp_bit_step_every_ms;
+      afe_regulatorSettings[i0].ramp_bit_step_every_ms =
+	  AFE_REGULATOR_DEFAULT_ramp_bit_step_every_ms;
       afe_regulatorSettings[i0].ramp_bit_step_timestamp_old_ms = 0;
       afe_regulatorSettings[i0].ramp_curent_voltage_set_bits = AFE_DAC_START;
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits = AFE_DAC_START;
@@ -398,8 +400,8 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 #endif // HARDWARE_CONTROL_TEMPERATURE_LOOP_DISABLED
 
   // 1. Get the current temperature from the sensor.
-  float current_temperature = get_average_atSettings (
-      rptr->temperature_channelSettings_ptr, timestamp_ms);
+  float current_temperature = get_average_atSettings (rptr->temperature_channelSettings_ptr,
+						      timestamp_ms);
 
   // 2. Validate the temperature reading.
   if (isnan(current_temperature))
@@ -417,10 +419,8 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
     }
 
   // 4. Calculate the new target voltage and corresponding DAC value.
-  float new_target_voltage = get_voltage_for_SiPM_x (current_temperature,
-						     rptr);
-  uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (
-      new_target_voltage, rptr);
+  float new_target_voltage = get_voltage_for_SiPM_x (current_temperature, rptr);
+  uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (new_target_voltage, rptr);
 
   // 5. Update the regulator's state with the new values.
   // Set the target for the DAC ramp function.
@@ -442,7 +442,7 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
       tmp.id = CAN_ID_IN_MSG;
       tmp.timestamp = HAL_GetTick (); // for timeout
       tmp.data[0] = AFECommand_debug_machine_control;
-      enqueueSubdeviceStatus(&tmp, rptr->subdevice);
+      enqueueSubdeviceStatus (&tmp, rptr->subdevice);
     }
   rptr->ramp_target_voltage_set_bits_old = new_target_dac_bits;
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
@@ -516,7 +516,7 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 #if TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
           // DAC hardware control is disabled, do nothing.
 #else // TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
-	  machine_DAC_set(rptr, rptr->ramp_curent_voltage_set_bits);
+	  machine_DAC_set (rptr, rptr->ramp_curent_voltage_set_bits);
 #endif // TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
 	}
       else
@@ -568,8 +568,8 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 	  uint8_t subdev = 1 << i;
 	  s_regulatorSettings *rs = &afe_regulatorSettings[i];
 	  s_ADC_Measurement tmp_adc;
-	  get_n_latest_from_buffer(rs->voltage_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
-	  rs->V = faxplusbcs((float)tmp_adc.adc_value, rs->voltage_channelSettings_ptr);
+	  get_n_latest_from_buffer (rs->voltage_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
+	  rs->V = faxplusbcs ((float) tmp_adc.adc_value, rs->voltage_channelSettings_ptr);
 	  // Voltage
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 0 + cnt,
 						       total_msg_count, subdev, &rs->V);
@@ -588,7 +588,7 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 4 + cnt,
 						       total_msg_count, subdev, &rs->T);
 	  // Last temperature in bytes
-	  get_n_latest_from_buffer(rs->temperature_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
+	  get_n_latest_from_buffer (rs->temperature_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
 	  tmp_float = tmp_adc.adc_value;
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 5 + cnt,
 						       total_msg_count, subdev, &tmp_float);
@@ -634,7 +634,7 @@ handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
     {
       return;
     }
-  enqueueSubdeviceStatus(reply, masked_channel);
+  enqueueSubdeviceStatus (reply, masked_channel);
 }
 
 static inline void __attribute__((always_inline, optimize("-Os")))
@@ -659,72 +659,79 @@ handle_getVersion (CAN_Message_t *reply)
 }
 
 static HAL_StatusTypeDef
-machine_set_tim_period_ms(TIM_HandleTypeDef *htim, uint32_t period_ms)
+machine_set_tim_period_ms (TIM_HandleTypeDef *htim, uint32_t period_ms)
 {
-    if (period_ms == 0)
+  if (period_ms == 0)
     {
-        return HAL_ERROR;
+      return HAL_ERROR;
     }
 
-    const uint32_t tim_clk = 48000000; // From SystemClock_Config()
-    // Calculate the total number of timer clock cycles for the desired period.
-    const uint64_t total_cycles = (uint64_t)period_ms * (tim_clk / 1000);
+  const uint32_t tim_clk = 48000000; // From SystemClock_Config()
+  // Calculate the total number of timer clock cycles for the desired period.
+  const uint64_t total_cycles = (uint64_t) period_ms * (tim_clk / 1000);
 
-    // The product of (PSC+1) and (ARR+1) must be <= 2^32
-    if (total_cycles > 0x100000000ULL)
+  // The product of (PSC+1) and (ARR+1) must be <= 2^32
+  if (total_cycles > 0x100000000ULL)
     {
-        return HAL_ERROR; // Period is too long to configure.
+      return HAL_ERROR; // Period is too long to configure.
     }
 
-    // Strategy 1: Attempt to use a prescaler that gives a 1 MHz counter clock (1 us resolution).
-    // This is ideal for common, shorter periods.
-    uint32_t psc_candidate = (tim_clk / 1000000) - 1; // Should be 47 for 48MHz clock
-    if (psc_candidate < 65536)
+  // Strategy 1: Attempt to use a prescaler that gives a 1 MHz counter clock (1 us resolution).
+  // This is ideal for common, shorter periods.
+  uint32_t psc_candidate = (tim_clk / 1000000) - 1; // Should be 47 for 48MHz clock
+  if (psc_candidate < 65536)
     {
-        uint64_t period_candidate_plus_1 = total_cycles / (psc_candidate + 1);
-        if ((period_candidate_plus_1 > 0) && (period_candidate_plus_1 <= 65536) && (total_cycles % (psc_candidate + 1) == 0))
-        {
-            htim->Instance->PSC = psc_candidate;
-            htim->Instance->ARR = period_candidate_plus_1 - 1;
-            return HAL_OK;
-        }
+      uint64_t period_candidate_plus_1 = total_cycles / (psc_candidate + 1);
+      if ((period_candidate_plus_1 > 0) && (period_candidate_plus_1 <= 65536)
+	  && (total_cycles % (psc_candidate + 1) == 0))
+	{
+	  htim->Instance->PSC = psc_candidate;
+	  htim->Instance->ARR = period_candidate_plus_1 - 1;
+	  return HAL_OK;
+	}
     }
 
-    // Strategy 2: If the first strategy fails, search for the smallest valid prescaler
-    // to maximize the period register for best resolution.
-    uint32_t psc_plus_1 = (total_cycles + 65535) / 65536; // ceiling division
-    if (psc_plus_1 == 0) { psc_plus_1 = 1; }
-
-    while (((total_cycles % psc_plus_1) != 0) && (psc_plus_1 <= 65536)) {
-        psc_plus_1++;
+  // Strategy 2: If the first strategy fails, search for the smallest valid prescaler
+  // to maximize the period register for best resolution.
+  uint32_t psc_plus_1 = (total_cycles + 65535) / 65536; // ceiling division
+  if (psc_plus_1 == 0)
+    {
+      psc_plus_1 = 1;
     }
 
-    if (psc_plus_1 <= 65536) {
-        htim->Instance->PSC = psc_plus_1 - 1;
-        htim->Instance->ARR = (total_cycles / psc_plus_1) - 1;
-        return HAL_OK;
+  while (((total_cycles % psc_plus_1) != 0) && (psc_plus_1 <= 65536))
+    {
+      psc_plus_1++;
     }
 
-    return HAL_ERROR; // No suitable combination found
+  if (psc_plus_1 <= 65536)
+    {
+      htim->Instance->PSC = psc_plus_1 - 1;
+      htim->Instance->ARR = (total_cycles / psc_plus_1) - 1;
+      return HAL_OK;
+    }
+
+  return HAL_ERROR; // No suitable combination found
 }
 
 static inline void __attribute__((always_inline, optimize("-Os")))
 handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint32_t ms = 0;
-  memcpy((uint8_t*)&ms,&msg->Data[3],sizeof(uint32_t));
+  memcpy ((uint8_t*) &ms, &msg->Data[3], sizeof(uint32_t));
 #if AFE_ADC_SOFT_LAUNCHED
   afe_adc_soft_active = 1;
   afe_adc_soft_period_ms = ms;
   afe_adc_soft_timestamp_ms = HAL_GetTick();
 #else // AFE_ADC_SOFT_LAUNCHED
-  HAL_ADC_Start_DMA (&hadc, (uint32_t*) &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
+  HAL_ADC_Stop_DMA (&hadc); // Important: Stop before restart
+  HAL_ADC_Start_DMA (&hadc, &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
 #if AFE_ADC_HARD_BY_TIMER
-  machine_set_tim_period_ms(&htim1, ms);
-  HAL_TIM_Base_Start(&htim1);
+  machine_set_tim_period_ms (&htim1, ms);
+  HAL_TIM_Base_Start (&htim1);
 #endif // AFE_ADC_HARD_BY_TIMER
 #endif // AFE_ADC_SOFT_LAUNCHED
-  memcpy(&reply->data[0],&msg->Data[0],msg->DLC);
+  memcpy (&reply->data[0], &msg->Data[0], msg->DLC);
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
@@ -864,7 +871,7 @@ handle_setAD8402Value (const s_can_msg_recieved *msg, CAN_Message_t *reply)
     {
       if (channels & (1 << channel))
 	{
-	  reply->data[4] |= (uint8_t)(
+	  reply->data[4] |= (uint8_t) (
 	      AD8402_Write (&hspi1, channel, value, TIMEOUT_SPI1_MS) == HAL_OK ? 0 : 1) << channel;
 	}
     }
@@ -877,7 +884,7 @@ handle_writeGPIO (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator (msg->Data[2]);
   uint32_t GPIO_Pin = 1 << msg->Data[3]; // GPbIO Pin mask
   uint8_t PinState = msg->Data[4];
-  machine_GPIO_WritePin (GPIOx, (uint16_t)GPIO_Pin, PinState);
+  machine_GPIO_WritePin (GPIOx, (uint16_t) GPIO_Pin, PinState);
   reply->data[2] = msg->Data[2];
   reply->data[3] = msg->Data[3];
   reply->data[4] = msg->Data[4];
@@ -997,8 +1004,7 @@ handle_setDAC_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message_t *rep
     {
       if (channel_mask & (1 << channel))
 	{
-	  reply->data[4] |=
-	      machine_DAC_switch (&afe_regulatorSettings[channel], value) << channel;
+	  reply->data[4] |= machine_DAC_switch (&afe_regulatorSettings[channel], value) << channel;
 	}
     }
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
@@ -1026,8 +1032,8 @@ handle_set_channel_property (const s_can_msg_recieved *msg, CAN_Message_t *reply
     {
       if (channelMask & (1 << channel))
 	{
-	  uint8_t *dst = (uint8_t *)&afe_channelSettings[channel];
-	  memcpy(dst + offset, &msg->Data[3], size);
+	  uint8_t *dst = (uint8_t*) &afe_channelSettings[channel];
+	  memcpy (dst + offset, &msg->Data[3], size);
 	  if (reset_buffer)
 	    {
 	      update_buffer_by_channelSettings (&afe_channelSettings[channel]);
@@ -1050,8 +1056,8 @@ handle_set_regulator_property (const s_can_msg_recieved *msg, CAN_Message_t *rep
     {
       if (subdevMask & (1 << subdev))
 	{
-	  uint8_t *dst = (uint8_t *)&afe_regulatorSettings[subdev];
-	  memcpy(dst + offset, &msg->Data[3], size);
+	  uint8_t *dst = (uint8_t*) &afe_regulatorSettings[subdev];
+	  memcpy (dst + offset, &msg->Data[3], size);
 	}
     }
   // Echo the command back as confirmation
@@ -1252,7 +1258,7 @@ can_execute (const s_can_msg_recieved msg)
       }
     case AFECommand_setDACTargetSi_bySubdeviceMask:
       {
-	handle_setDACTargetSi_bySubdeviceMask(&msg, &tmp);
+	handle_setDACTargetSi_bySubdeviceMask (&msg, &tmp);
 	break;
       }
 
@@ -1267,15 +1273,14 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setAveragingAlpha_byMask: // set averagingSettings.alpha
       {
 	handle_set_channel_property (&msg, &tmp, offsetof(s_channelSettings, alpha), sizeof(float),
-				     true);
+	true);
 	break;
       }
     case AFECommand_setAveragingBufferSize_byMask: // set averagingSettings.buffer_size
       {
-	handle_set_channel_property (
-	    &msg, &tmp,
-	    offsetof(s_channelSettings, buffer_ADC) + offsetof(s_BufferADC, buffer_size),
-	    sizeof(uint32_t), true);
+	handle_set_channel_property (&msg, &tmp,
+	offsetof(s_channelSettings, buffer_ADC) + offsetof(s_BufferADC, buffer_size),
+				     sizeof(uint32_t), true);
 	break;
       }
     case AFECommand_setChannel_dt_ms_byMask:
@@ -1324,10 +1329,9 @@ can_execute (const s_can_msg_recieved msg)
     case AFECommand_setChannelBufferSize:
       {
 	// This command is functionally identical to AFECommand_setAveragingBufferSize_byMask
-	handle_set_channel_property (
-	    &msg, &tmp,
-	    offsetof(s_channelSettings, buffer_ADC) + offsetof(s_BufferADC, buffer_size),
-	    sizeof(uint32_t), true);
+	handle_set_channel_property (&msg, &tmp,
+	offsetof(s_channelSettings, buffer_ADC) + offsetof(s_BufferADC, buffer_size),
+				     sizeof(uint32_t), true);
 	break;
       }
 
@@ -1426,7 +1430,7 @@ can_execute (const s_can_msg_recieved msg)
 //		get_n_latest_from_buffer (channelSettings[channel].buffer_ADC, 1, &adc_val);
 		HAL_ADC_Start (&hadc);
 		HAL_ADC_PollForConversion (&hadc, 1000);
-		adc_val.adc_value = (uint16_t)HAL_ADC_GetValue (&hadc);
+		adc_val.adc_value = (uint16_t) HAL_ADC_GetValue (&hadc);
 		adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
 //		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
 //							     total_msg_count, channel,
@@ -1445,7 +1449,8 @@ can_execute (const s_can_msg_recieved msg)
       }
     case AFECommand_clearRegulator_T_old:
       {
-	handle_set_regulator_property(&msg, &tmp, offsetof(s_regulatorSettings, T_old), sizeof(float));
+	handle_set_regulator_property (&msg, &tmp, offsetof(s_regulatorSettings, T_old),
+				       sizeof(float));
 	break;
       }
     default:
@@ -1491,7 +1496,7 @@ machine_control (void)
 	}
 
       // Process DAC ramping logic active always
-      process_dac_ramping(regulatorSettings_ptr, timestamp_ms);
+      process_dac_ramping (regulatorSettings_ptr, timestamp_ms);
     }
 }
 
@@ -1560,6 +1565,7 @@ machine_debug_run (void)
 }
 #endif
 
+//volatile int8_t _rdy2cpy = 0;
 void
 machine_main (void)
 {
@@ -1581,6 +1587,8 @@ machine_main (void)
 	  {
 	    adc_dma_buffer[i0] = 0;
 	  }
+	afe_adc_i = 0;
+	afe_adc_soft_started = 0;
 //#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 //	main_machine_soft_watchdog_timestamp_ms = HAL_GetTick();
 //#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
@@ -1600,9 +1608,31 @@ machine_main (void)
 #if AFE_ADC_SOFT_LAUNCHED
 	if (afe_adc_soft_active)
 	  {
+#if AFE_ADC_ISR
+	    if (afe_adc_i == AFE_NUMBER_OF_CHANNELS)
+	      {
+		++afe_adc_i;
+		HAL_ADC_Stop_IT (&hadc);
+		s_ADC_Measurement _adc;
+		_adc.timestamp_ms = afe_adc_soft_timestamp_ms;
+		for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
+		  {
+		    _adc.adc_value = adc_dma_buffer[i];
+		    add_to_buffer (&bufferADC[i], &_adc);
+		  }
+	      }
+	    if ((HAL_GetTick () - afe_adc_soft_timestamp_ms) >= afe_adc_soft_period_ms)
+	      {
+		HAL_ADC_Stop_IT (&hadc);
+		afe_adc_soft_timestamp_ms = HAL_GetTick ();
+		afe_adc_i = 0;
+		HAL_ADC_Start_IT (&hadc);
+	      }
+#else // AFE_ADC_ISR
 	    if ((HAL_GetTick () - afe_adc_soft_timestamp_ms) >= afe_adc_soft_period_ms)
 	      {
 		afe_adc_soft_timestamp_ms = HAL_GetTick ();
+#if AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
 		s_ADC_Measurement _adc;
 		_adc.timestamp_ms = afe_adc_soft_timestamp_ms;
 		for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
@@ -1611,17 +1641,67 @@ machine_main (void)
 		      {
 			Error_Handler();
 		      }
-
 		    if (HAL_ADC_PollForConversion (&hadc, 100) != HAL_OK)
 		      {
 			Error_Handler();
 		      }
 
-		    _adc.adc_value = (uint16_t)HAL_ADC_GetValue (&hadc);
+		    adc_dma_buffer[i] = (uint16_t) HAL_ADC_GetValue (&hadc);
+		  }
+		for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
+		  {
+		    _adc.adc_value = adc_dma_buffer[i];
 		    add_to_buffer (&bufferADC[i], &_adc);
 		  }
+#else // AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
+		if (afe_adc_soft_started) /* ERROR DETECTED*/
+		  {
+		    /* TODO Restart conversion queue */
+		    HAL_ADC_Stop (&hadc);
+		  }
+		afe_adc_i = 0;
+		afe_adc_soft_started = 1;
+		HAL_ADC_Start (&hadc);
+
 	      }
+	    if (afe_adc_soft_started)
+	      {
+		if (HAL_ADC_PollForConversion (&hadc, 0) == HAL_OK)
+		  {
+		    adc_dma_buffer[afe_adc_i] = (uint16_t) HAL_ADC_GetValue (&hadc);
+		    ++afe_adc_i;
+		    if (afe_adc_i == AFE_NUMBER_OF_CHANNELS) /* All channels was read */
+		      {
+			afe_adc_soft_started = 0;
+			s_ADC_Measurement _adc;
+			_adc.timestamp_ms = afe_adc_soft_timestamp_ms;
+			for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
+			  {
+			    _adc.adc_value = adc_dma_buffer[i];
+			    add_to_buffer (&bufferADC[i], &_adc);
+			  }
+		      }
+		    else
+		      {
+			HAL_ADC_Start (&hadc);
+		      }
+		  }
+	      }
+#endif // AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
+#endif // AFE_ADC_ISR
 	  }
+#else
+//	if (_rdy2cpy)
+//	  {
+//	    _rdy2cpy = 0;
+//	    s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback;
+//	    _ADC_Measurement_HAL_ADC_ConvCpltCallback.timestamp_ms = HAL_GetTick ();
+//	    for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
+//	      {
+//		_ADC_Measurement_HAL_ADC_ConvCpltCallback.adc_value = 0x1FFF & adc_dma_buffer[i];
+//		add_to_buffer (&bufferADC[i], &_ADC_Measurement_HAL_ADC_ConvCpltCallback);
+//	      }
+//	  }
 #endif
 	/* Update CAN machine */
 	can_machine ();
@@ -1646,27 +1726,42 @@ machine_main (void)
     }
 }
 
+#if AFE_ADC_SOFT_LAUNCHED
+#else
 /* DMA Transfer Complete Callback */
 void __attribute__ ((optimize("-O3")))
 HAL_ADC_ConvCpltCallback (ADC_HandleTypeDef *hadc)
 {
+#if AFE_ADC_ISR & AFE_ADC_SOFT_LAUNCHED
+  if (__HAL_ADC_GET_FLAG(hadc, ADC_FLAG_EOC))
+    {
+      adc_dma_buffer[afe_adc_i] = (uint16_t) HAL_ADC_GetValue (hadc);
+      ++afe_adc_i;
+      if (afe_adc_i < AFE_NUMBER_OF_CHANNELS)
+	{
+	  HAL_ADC_Start_IT (hadc);
+	}
+    }
+#else
+//  _rdy2cpy = 1;
 //    __DSB();  // Data Synchronization Barrier (ensures previous memory accesses complete)
-
   /* Store timestamp */
-  static s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback;
+  HAL_ADC_Stop_DMA (hadc); // Important: Stop before restart
+  s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback;
   _ADC_Measurement_HAL_ADC_ConvCpltCallback.timestamp_ms = HAL_GetTick ();
-
   for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
     {
       /* Ensure the latest ADC value is read from memory (not a cached value) */
 //        __DMB();  // Data Memory Barrier (ensures correct ordering of memory operations)
-      _ADC_Measurement_HAL_ADC_ConvCpltCallback.adc_value = adc_dma_buffer[i];
-
+//      _ADC_Measurement_HAL_ADC_ConvCpltCallback.adc_value = 0x1FFF & (uint16_t)adc_dma_buffer[i];
+      _ADC_Measurement_HAL_ADC_ConvCpltCallback.adc_value = 0x0FFF & adc_dma_buffer[i];
+      add_to_buffer (&bufferADC[i], &_ADC_Measurement_HAL_ADC_ConvCpltCallback);
       /* Ensure value is stored before proceeding */
 //        __DSB();
-      add_to_buffer (&bufferADC[i], &_ADC_Measurement_HAL_ADC_ConvCpltCallback);
     }
-
+  HAL_ADC_Start_DMA (hadc, (uint32_t*) &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
   /* Ensure ISR execution order is correct before exiting */
 //    __ISB();  // Instruction Synchronization Barrier (ensures all instructions complete before next)
+#endif
 }
+#endif // AFE_ADC_SOFT_LAUNCHED

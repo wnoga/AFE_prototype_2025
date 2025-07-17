@@ -176,16 +176,19 @@ int main(void)
     getUID();
 
     MX_GPIO_Init();
+#if AFE_ADC_HARD_BY_TIMER
     MX_DMA_Init();
+#endif
     MX_CAN_Init();
-    MX_IWDG_Init();
 
     MX_DAC_Init();
 
     MX_SPI1_Init();
 
-    MX_ADC_Init();
     MX_TIM1_Init();
+    MX_ADC_Init();
+
+    MX_IWDG_Init();
 
 //    __HAL_RCC_DBGMCU_CLK_ENABLE();
 //    __HAL_DBGMCU_FREEZE_IWDG();
@@ -501,7 +504,7 @@ static void MX_ADC_Init(void)
   /* USER CODE END ADC_Init 0 */
 
   ADC_ChannelConfTypeDef sConfig = {0};
-
+  const uint32_t SamplingTimeCommon = ADC_SAMPLETIME_71CYCLES_5;
   /* USER CODE BEGIN ADC_Init 1 */
 #if AFE_ADC_SOFT_LAUNCHED
   hadc.Instance = ADC1;
@@ -510,7 +513,11 @@ static void MX_ADC_Init(void)
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
   hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+#if AFE_ADC_ISR
   hadc.Init.LowPowerAutoWait = DISABLE;
+#else
+  hadc.Init.LowPowerAutoWait = ENABLE;
+#endif
   hadc.Init.LowPowerAutoPowerOff = DISABLE;
   hadc.Init.ContinuousConvMode = DISABLE;
   hadc.Init.DiscontinuousConvMode = ENABLE;
@@ -528,6 +535,7 @@ static void MX_ADC_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc.Instance = ADC1;
+  hadc.Init.SamplingTimeCommon = SamplingTimeCommon;
   hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc.Init.Resolution = ADC_RESOLUTION_12B;
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
@@ -540,7 +548,8 @@ static void MX_ADC_Init(void)
   hadc.Init.DiscontinuousConvMode = DISABLE;
   hadc.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T1_TRGO;
   hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-  hadc.Init.DMAContinuousRequests = ENABLE;
+  hadc.Init.DMAContinuousRequests = DISABLE;
+  hadc.Init.LowPowerAutoWait = ENABLE;
 #else
   hadc.Init.ContinuousConvMode = ENABLE;
   hadc.Init.DiscontinuousConvMode = DISABLE;
@@ -573,8 +582,8 @@ static void MX_ADC_Init(void)
     ADC_CHANNEL_9 };
 
   sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-  sConfig.SamplingTime = ADC_SAMPLETIME_71CYCLES_5;
-  for (size_t i0 = 0; i0 < (sizeof(channels) / sizeof(channels[0])); ++i0)
+  sConfig.SamplingTime = SamplingTimeCommon;
+  for (size_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
     {
       sConfig.Channel = channels[i0];
       HAL_ADC_ConfigChannel (&hadc, &sConfig);
@@ -588,27 +597,26 @@ static void MX_ADC_Init(void)
   */
 static void MX_DMA_Init(void)
 {
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
 
-//  /* DMA controller clock enable */
-//  __HAL_RCC_DMA1_CLK_ENABLE();
-//
-//  hdma_adc.Instance = DMA1_Channel1;
-//  hdma_adc.Init.Direction = DMA_PERIPH_TO_MEMORY;
-//  hdma_adc.Init.PeriphInc = DMA_PINC_DISABLE;
-//  hdma_adc.Init.MemInc = DMA_MINC_ENABLE;
-//  hdma_adc.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
-//  hdma_adc.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
-//  hdma_adc.Init.Mode = DMA_CIRCULAR;
-//  hdma_adc.Init.Priority = DMA_PRIORITY_MEDIUM;
-//
-//  HAL_DMA_Init(&hdma_adc);
-//
-//  __HAL_LINKDMA(&hadc, DMA_Handle, hdma_adc);
-//
-//  /* DMA interrupt init */
-//  /* DMA1_Channel1_IRQn interrupt configuration */
-//  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
-//  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  hdma_adc.Instance = DMA1_Channel1;
+  hdma_adc.Init.Direction = DMA_PERIPH_TO_MEMORY;
+  hdma_adc.Init.PeriphInc = DMA_PINC_DISABLE;
+  hdma_adc.Init.MemInc = DMA_MINC_ENABLE;
+  hdma_adc.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+  hdma_adc.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+  hdma_adc.Init.Mode = DMA_CIRCULAR;
+  hdma_adc.Init.Priority = DMA_PRIORITY_LOW;
+
+  HAL_DMA_Init(&hdma_adc);
+
+  __HAL_LINKDMA(&hadc, DMA_Handle, hdma_adc);
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
 }
 

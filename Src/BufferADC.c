@@ -52,7 +52,7 @@ init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uin
  * @return The number of items in the buffer.
  */
 inline size_t __attribute__ ((always_inline, optimize("-O3")))
-CircularBuffer_GetItemCount (const s_BufferADC *cb)
+CircularBuffer_GetItemCount (s_BufferADC *cb)
 {
   return cb->head >= cb->tail ? cb->head - cb->tail : cb->buffer_size - (cb->tail - cb->head);
 }
@@ -124,7 +124,7 @@ get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here)
  * @brief Adds a new measurement to the circular buffer.
  */
 inline void __attribute__ ((always_inline, optimize("-O3")))
-add_to_buffer (s_BufferADC *cb, const s_ADC_Measurement *measurement)
+add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement)
 {
   // Check if the buffer is not empty
   if (cb->tail != cb->head)
@@ -139,7 +139,8 @@ add_to_buffer (s_BufferADC *cb, const s_ADC_Measurement *measurement)
 	}
     }
   // Copy the new measurement to the buffer at the current head position
-  memcpy (&cb->buffer[cb->head], measurement, sizeof(s_ADC_Measurement));
+  cb->buffer[cb->head].adc_value = measurement->adc_value;
+  cb->buffer[cb->head].timestamp_ms = measurement->timestamp_ms;
 
   // Increment head, handling wrap-around
   ++cb->head;
