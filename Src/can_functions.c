@@ -14,7 +14,7 @@
 
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 uint32_t afe_can_watchdog_timestamp_ms = 0;
-uint32_t afe_can_watchdog_timeout_ms = 5*60*1000; // default 5
+uint32_t afe_can_watchdog_timeout_ms = 5 * 60 * 1000; // default 5
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 
 #if USE_CAN_MSG_BURST_DELAY_MS
@@ -67,22 +67,22 @@ GetGPIOPortByEnumerator (uint8_t enumerator)
   switch (enumerator)
     {
     case 0:
-      port = (GPIO_TypeDef *)GPIOA;
+      port = (GPIO_TypeDef*) GPIOA;
       break;
     case 1:
-      port = (GPIO_TypeDef *)GPIOB;
+      port = (GPIO_TypeDef*) GPIOB;
       break;
     case 2:
-      port = (GPIO_TypeDef *)GPIOC;
+      port = (GPIO_TypeDef*) GPIOC;
       break;
     case 3:
-      port = (GPIO_TypeDef *)GPIOD;
+      port = (GPIO_TypeDef*) GPIOD;
       break;
     case 4:
-      port = (GPIO_TypeDef *)GPIOE;
+      port = (GPIO_TypeDef*) GPIOE;
       break;
     case 5:
-      port = (GPIO_TypeDef *)GPIOF;
+      port = (GPIO_TypeDef*) GPIOF;
       break;
     default:
       break;
@@ -164,7 +164,7 @@ HAL_CAN_ErrorCallback (CAN_HandleTypeDef *hcan)
   // will be called, which can then reset canState to IDLE.
   // If the peripheral is in a state like Bus-Off, this call might not immediately
   // lead to reception, but it readies the interrupt for when recovery happens.
-  if (HAL_CAN_Receive_IT(hcan, CAN_FIFO0) != HAL_OK)
+  if (HAL_CAN_Receive_IT (hcan, CAN_FIFO0) != HAL_OK)
     {
       // Optionally handle failure to re-arm reception IT
     }
@@ -247,7 +247,6 @@ CANCircularBuffer_dequeueMessage (CANCircularBuffer_t *cb)
   return msg;
 }
 
-
 // Transmit handler (called periodically or in main loop)
 void __attribute__ ((optimize("-O3")))
 CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
@@ -262,12 +261,12 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
 
   CAN_Message_t *msg;
 
-  msg = CANCircularBuffer_getMessage(&canTxBuffer); // Peek at the oldest message
+  msg = CANCircularBuffer_getMessage (&canTxBuffer); // Peek at the oldest message
 
   // Check for message timeout
-  if (msg && (HAL_GetTick() - msg->timestamp) > CAN_MSG_LIFETIME_MS)
+  if (msg && (HAL_GetTick () - msg->timestamp) > CAN_MSG_LIFETIME_MS)
     {
-      CANCircularBuffer_deleteMessage(&canTxBuffer); // Remove timed-out message
+      CANCircularBuffer_deleteMessage (&canTxBuffer); // Remove timed-out message
       // Let the next call to CAN_TransmitHandler process the new buffer state
       return;
     }
@@ -276,29 +275,29 @@ CAN_TransmitHandler (CAN_HandleTypeDef *hcan)
   if (msg)
     {
 #if USE_CAN_MSG_BURST_DELAY_MS
-      if ((HAL_GetTick() - canTxLast_ms) <= canMsgBurstDelay_ms)
-        {
-          // Burst delay not yet elapsed
-          return;
-        }
+      if ((HAL_GetTick () - canTxLast_ms) <= canMsgBurstDelay_ms)
+	{
+	  // Burst delay not yet elapsed
+	  return;
+	}
 #endif // CAN_MSG_BURST_DELAY_MS
 
-      canTxLast_ms = HAL_GetTick();
+      canTxLast_ms = HAL_GetTick ();
       hcan->pTxMsg->StdId = msg->id;
       hcan->pTxMsg->DLC = msg->dlc;
       hcan->pTxMsg->IDE = CAN_ID_STD;
       hcan->pTxMsg->RTR = CAN_RTR_DATA;
-      memcpy(&hcan->pTxMsg->Data[0], &msg->data[0], msg->dlc);
+      memcpy (&hcan->pTxMsg->Data[0], &msg->data[0], msg->dlc);
 
-      if (HAL_CAN_Transmit_IT(hcan) == HAL_OK)
-        {
-          canState = e_CANMachineState_SENDING; // Set state to sending
-        }
+      if (HAL_CAN_Transmit_IT (hcan) == HAL_OK)
+	{
+	  canState = e_CANMachineState_SENDING; // Set state to sending
+	}
       else
-        {
-          // Transmission request failed (e.g., bus off or other hardware issue)
-          canState = e_CANMachineState_ERROR;
-        }
+	{
+	  // Transmission request failed (e.g., bus off or other hardware issue)
+	  canState = e_CANMachineState_ERROR;
+	}
     }
 }
 
@@ -307,9 +306,10 @@ void __attribute__ ((optimize("-O3")))
 CAN_TransmitCallback (CAN_HandleTypeDef *hcan)
 {
   // If a transmission completed successfully, the bus might be recovering or fine.
-  if (canState == e_CANMachineState_ERROR) {
+  if (canState == e_CANMachineState_ERROR)
+    {
       canState = e_CANMachineState_IDLE;
-  }
+    }
   CANCircularBuffer_deleteMessage (&canTxBuffer);
   canState = e_CANMachineState_IDLE; // Set state back to idle
 }
@@ -382,19 +382,6 @@ can_machine (void)
 
 	StartCan ();
 	CAN_Message_t tmp;
-	// uint8_t command = AFECommand_resetAll;
-	// uint32_t msg_id = CAN_ID_IN_MSG;
-//	typedef enum
-//	{
-//	  RESET_UNKNOWN = 0,
-//	  RESET_POWER_ON,
-//	  RESET_PIN,
-//	  RESET_BROWN_OUT,
-//	  RESET_SOFTWARE,
-//	  RESET_WATCHDOG,
-//	  RESET_WINDOW_WATCHDOG,
-//	  RESET_LOW_POWER
-//	} ResetReason_t;
 
 	uint32_t timestamp_ms = HAL_GetTick ();
 	tmp.timestamp = timestamp_ms;
@@ -431,7 +418,6 @@ can_machine (void)
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	if (canState == e_CANMachineState_ERROR)
 	  {
-	    // NVIC_SystemReset (); // Reset if CAN error
 	    can_machine_state = e_can_machine_state_init;
 	  }
 
@@ -449,15 +435,13 @@ can_machine (void)
 inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
 get_byte_of_message_number (uint8_t msg_index, uint8_t total_msg_count)
 {
-  return (0xF0 &
-      ((total_msg_count - 1U) << 4U)) |
-      ((msg_index) & 0x0F); // 0xY0 - max index, 0x0Z msg index
+  return (0xF0 & ((total_msg_count - 1U) << 4U)) | ((msg_index) & 0x0F); // 0xY0 - max index, 0x0Z msg index
 }
 
 void
 CANCircularBuffer_enqueueMessage_data (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
-				       uint8_t msg_index, uint8_t total_msg_count, uint8_t channel_mask,
-				       uint8_t *value, uint8_t size)
+				       uint8_t msg_index, uint8_t total_msg_count,
+				       uint8_t channel_mask, uint8_t *value, uint8_t size)
 {
   tmp->data[1] = get_byte_of_message_number (msg_index, total_msg_count);
   tmp->data[2] = channel_mask;
@@ -478,8 +462,7 @@ CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Messag
 void
 CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN_Message_t *tmp,
 					       uint8_t msg_index, uint8_t total_msg_count,
-					       uint8_t channel_mask,
-					       uint32_t timestamp_ms)
+					       uint8_t channel_mask, uint32_t timestamp_ms)
 {
   tmp->data[1] = get_byte_of_message_number (msg_index, total_msg_count);
   tmp->data[2] = channel_mask;
@@ -493,13 +476,14 @@ HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
 {
   // If a message is successfully received, the bus is likely working.
   // Clear error state if it was set.
-  if (canState == e_CANMachineState_ERROR) {
+  if (canState == e_CANMachineState_ERROR)
+    {
       canState = e_CANMachineState_IDLE;
-  }
+    }
 
   if (is_this_msg_for_me (hcan->pRxMsg, AFE_CAN_ID) && (hcan->pRxMsg->DLC <= 8))
     {
-      can_msg_received.DLC = (uint8_t)hcan->pRxMsg->DLC;
+      can_msg_received.DLC = (uint8_t) hcan->pRxMsg->DLC;
       can_msg_received.timestamp = HAL_GetTick ();
 #if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
       afe_can_watchdog_timestamp_ms = can_msg_received.timestamp;
@@ -508,9 +492,9 @@ HAL_CAN_RxCpltCallback (CAN_HandleTypeDef *hcan)
       canRxFlag = 1;
     }
   // Re-enable CAN message reception interrupt
-  if (HAL_CAN_Receive_IT(hcan, CAN_FIFO0) != HAL_OK)
+  if (HAL_CAN_Receive_IT (hcan, CAN_FIFO0) != HAL_OK)
     {
-        // If re-arming fails, could set error state again or log
-        // canState = e_CANMachineState_ERROR;
+      // If re-arming fails, could set error state again or log
+      // canState = e_CANMachineState_ERROR;
     }
 }

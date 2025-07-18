@@ -40,7 +40,7 @@ faxplusb (float value, float a, float b)
 inline float __attribute__ ((always_inline, optimize("-O3")))
 faxplusbcs (float value, s_channelSettings *ch)
 {
-  return faxplusb(value, ch->a, ch->b);
+  return faxplusb (value, ch->a, ch->b);
 }
 
 int
@@ -155,17 +155,6 @@ next_index (size_t i, size_t i_0, size_t N, size_t buffer_size, uint8_t backward
     }
 }
 
-/***
- * @brief Calculates the average value from the ADC buffer based on the specified method.
- *
- * This function retrieves a set of ADC measurements from the circular buffer and computes
- * their average using the specified averaging method. It supports various methods such as
- * standard, exponential, RMS, harmonic, geometric, and weighted exponential averaging.
- * It also handles time-based filtering of measurements and can use ARIMA for more advanced
- * time-series analysis.
- *
- * @param cb Pointer to the circular buffer containing ADC measurements.
- */
 float __attribute__ ((optimize("-O3")))
 get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms,
 			 e_average method, float alpha, float multiplicator)
@@ -209,7 +198,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 #endif
 
   s_ADC_Measurement *ptr;
-  size_t i, valid_count = 0;
+  size_t i = 0;
   size_t cnt = 0;
   /* Set default value for sum */
   if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
@@ -217,7 +206,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       sum = NAN;
     }
   for (count = 0; count < N; ++count)
-  {
+    {
       /* Check if we should use moving average */
       if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC)
 	  || (method == e_average_ARIMA))
@@ -245,7 +234,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
       value = (float) ptr->adc_value;
       if (isnanf (value))
 	{
-		continue;
+	  continue;
 	}
       ++cnt;
       switch (method)
@@ -282,7 +271,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	case e_average_WEIGHTED_EXPONENTIAL:
 	  {
 	    uint32_t ru = timestamp_ms - ptr->timestamp_ms;
-	    float r = fabsf((float)ru);
+	    float r = fabsf ((float) ru);
 	    float weight = expf (-r * alpha);
 	    sum += (weight * value);
 	    weight_sum += weight;
@@ -375,8 +364,8 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 	    average_result = ptr0->adc_value;
 	    break;
 	  }
-	  }
-  }
+	}
+    }
   average_result = (method != e_average_ARIMA) ? average_result * multiplicator : average_result;
 #if USE_ARIMA
   if (method == e_average_ARIMA)
@@ -395,13 +384,12 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
 float __attribute__ ((optimize("-O3")))
 get_average_atSettings (s_channelSettings *a, uint32_t timestamp)
 {
-  return faxplusbcs(
+  return faxplusbcs (
       get_average_from_buffer (a->buffer_ADC, a->max_N, timestamp, a->max_dt_ms,
 			       a->averaging_method, a->alpha, a->multiplicator),
       a);
 
 }
-
 
 inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
 get_number_of_channels (uint8_t channels_mask)
@@ -423,5 +411,5 @@ get_number_of_channels (uint8_t channels_mask)
 inline uint16_t __attribute ((always_inline, optimize("-O3")))
 machine_DAC_convert_V_to_DAC_value (float V, s_regulatorSettings *regulatorSettings)
 {
-  return (uint16_t)roundf(faxplusb (V, regulatorSettings->a_dac, regulatorSettings->b_dac));
+  return (uint16_t) roundf (faxplusb (V, regulatorSettings->a_dac, regulatorSettings->b_dac));
 }

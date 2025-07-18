@@ -141,12 +141,6 @@ AD8402_Write (SPI_HandleTypeDef *hspi, uint8_t channel, uint8_t value, uint32_t 
   return HAL_SPI_Transmit (hspi, (uint8_t*) &toTransmit, 1, timeout);
 }
 
-/***
- * Keep this to avoid mistake from values
- * channel 0x00 -> DAC_CHANNEL_1
- * channel 0x10 -> DAC_CHANNEL_2
- * channel 0x11 -> both
- */
 static void
 machine_DAC_set (s_regulatorSettings *rptr, uint16_t value)
 {
@@ -189,34 +183,6 @@ machine_DAC_set (s_regulatorSettings *rptr, uint16_t value)
     }
 }
 
-//void
-//machine_DAC_set_si (uint8_t channel, float voltage)
-//{
-//  const float V_min = 50.0f;
-//  const float V_max = 82.0f;
-//  if (voltage == 0)
-//    {
-//      machine_DAC_set (channel, UINT16_MAX);
-//      return;
-//    }
-//  else if (voltage < V_min)
-//    {
-//      voltage = V_min;
-//    }
-//  else if (voltage > V_max)
-//    {
-//      voltage = V_max;
-//    }
-//  uint16_t value = UINT16_MAX * (roundf(voltage) - V_min) / (V_max - V_min);
-//  machine_DAC_set (channel, value);
-//}
-
-/***
- * Keep this to avoid mistake from values
- * channel 0x00 -> DAC_CHANNEL_1
- * channel 0x10 -> DAC_CHANNEL_2
- * channel 0x11 -> both
- */
 static HAL_StatusTypeDef
 machine_DAC_switch (s_regulatorSettings *rptr, uint8_t enable)
 {
@@ -294,12 +260,6 @@ machine_DAC_switch (s_regulatorSettings *rptr, uint8_t enable)
   return HAL_OK;
 }
 
-/***
- * Keep this to avoid mistake from values
- * channel 0x00 -> DAC_CHANNEL_1
- * channel 0x10 -> DAC_CHANNEL_2
- * channel 0x11 -> both
- */
 static void
 machine_DAC_set_and_start (s_regulatorSettings *rptr, uint16_t value)
 {
@@ -311,8 +271,6 @@ machine_DAC_set_and_start (s_regulatorSettings *rptr, uint16_t value)
   machine_DAC_switch (rptr, 1);
 }
 
-/***
- */
 void __attribute__ ((cold, optimize("-Os")))
 machine_main_init_0 (void)
 {
@@ -384,13 +342,6 @@ machine_main_init_0 (void)
   afe_regulatorSettings[1].subdevice = AFECommandSubdevice_slave;
 }
 
-/**
- * @brief Processes the temperature control loop for a given regulator.
- * This function calculates the required voltage for SiPMs based on temperature
- * and updates the target DAC value for ramping.
- * @param regulatorSettings_ptr Pointer to the regulator settings structure.
- * @param timestamp_ms Current system timestamp in milliseconds.
- */
 static inline void __attribute__((always_inline, optimize("-O3")))
 process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 {
@@ -398,11 +349,13 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
   // Temperature loop is disabled, do nothing.
   return;
 #endif // HARDWARE_CONTROL_TEMPERATURE_LOOP_DISABLED
-
+  if (!rptr->enabled)
+    {
+      return;
+    }
   // 1. Get the current temperature from the sensor.
   float current_temperature = get_average_atSettings (rptr->temperature_channelSettings_ptr,
 						      timestamp_ms);
-
   // 2. Validate the temperature reading.
   if (isnan(current_temperature))
     {
@@ -428,7 +381,6 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 
   // Update status variables for monitoring.
   rptr->T = current_temperature;
-//  regulatorSettings_ptr->V = new_target_voltage;
   rptr->V_target = new_target_voltage;
 
   // Update the last-seen temperature for the next dead-band check.
@@ -448,12 +400,6 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
 }
 
-/**
- * @brief Processes the DAC ramping logic for a given regulator.
- * This function smoothly adjusts the current DAC output towards the target DAC value.
- * @param regulatorSettings_ptr Pointer to the regulator settings structure.
- * @param timestamp_ms Current system timestamp in milliseconds.
- */
 static inline void __attribute__((always_inline, optimize("-O3")))
 process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 {
@@ -628,7 +574,6 @@ handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   reply->id = CAN_ID_IN_MSG;
   reply->timestamp = HAL_GetTick (); // for timeout
-//  reply->data[0] = AFECommand_getSubdeviceStatus;
   uint8_t masked_channel = msg->Data[2] & 0x03;
   if (0x00 == (masked_channel & AFECommandSubdevice_both))
     {
@@ -658,6 +603,7 @@ handle_getVersion (CAN_Message_t *reply)
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
+#if AFE_ADC_HARD_BY_TIMER
 static HAL_StatusTypeDef
 machine_set_tim_period_ms (TIM_HandleTypeDef *htim, uint32_t period_ms)
 {
@@ -713,6 +659,7 @@ machine_set_tim_period_ms (TIM_HandleTypeDef *htim, uint32_t period_ms)
 
   return HAL_ERROR; // No suitable combination found
 }
+#endif // AFE_ADC_HARD_BY_TIMER
 
 static inline void __attribute__((always_inline, optimize("-Os")))
 handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
@@ -1427,14 +1374,10 @@ can_execute (const s_can_msg_recieved msg)
 	  {
 	    if (channels & (1 << channel)) // loop over channel mask
 	      {
-//		get_n_latest_from_buffer (channelSettings[channel].buffer_ADC, 1, &adc_val);
 		HAL_ADC_Start (&hadc);
 		HAL_ADC_PollForConversion (&hadc, 1000);
 		adc_val.adc_value = (uint16_t) HAL_ADC_GetValue (&hadc);
 		adc_value_real = faxplusbcs (adc_val.adc_value, &afe_channelSettings[channel]);
-//		CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, &tmp, msg_index,
-//							     total_msg_count, channel,
-//							     &adc_value_real);
 		CANCircularBuffer_enqueueMessage_data (&canTxBuffer, &tmp, msg_index,
 						       total_msg_count, 1 << channel,
 						       (uint8_t*) &adc_value_real, sizeof(float));
@@ -1461,41 +1404,15 @@ can_execute (const s_can_msg_recieved msg)
     }
 }
 
-//void __attribute__ ((optimize("-O3")))
-//machine_calculate_averageValues (float *here)
-//{
-//  uint32_t timestamp_now = HAL_GetTick ();
-//  for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
-//    {
-//      if (machnie_flag_averaging_enabled[i0])
-//	{
-//	  here[i0] = get_average_atSettings (&afe_channelSettings[i0], timestamp_now);
-//	}
-//    }
-//}
-
-/***
- * @brief Temperature control loop.
- * This function implements the temperature control loop for the AFE device.
- * It reads temperature measurements, calculates the required voltage for SiPMs,
- * and adjusts the DAC output accordingly.
- */
 void __attribute__ ((optimize("-O3")))
 machine_control (void)
 {
-  /* Calculate values for DAC -- active part of the Temperature Loop */
   for (uint8_t subdev = 0; subdev < AFE_NUMBER_OF_SUBDEVICES; ++subdev)
     {
       s_regulatorSettings *regulatorSettings_ptr = &afe_regulatorSettings[subdev];
       uint32_t timestamp_ms = HAL_GetTick ();
 
-      if (regulatorSettings_ptr->enabled)
-	{
-	  // Process temperature loop logic if active
-	  process_temperature_loop (regulatorSettings_ptr, timestamp_ms);
-	}
-
-      // Process DAC ramping logic active always
+      process_temperature_loop (regulatorSettings_ptr, timestamp_ms);
       process_dac_ramping (regulatorSettings_ptr, timestamp_ms);
     }
 }
@@ -1565,7 +1482,6 @@ machine_debug_run (void)
 }
 #endif
 
-//volatile int8_t _rdy2cpy = 0;
 void
 machine_main (void)
 {
@@ -1589,9 +1505,6 @@ machine_main (void)
 	  }
 	afe_adc_i = 0;
 	afe_adc_soft_started = 0;
-//#if WATCHDOG_FOR_CAN_RECIEVER_ENABLED
-//	main_machine_soft_watchdog_timestamp_ms = HAL_GetTick();
-//#endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 #if MACHINE_DEBUG_RUN
 	_startADC (0);
 	uint16_t dac_value_master = 3000;
@@ -1690,19 +1603,7 @@ machine_main (void)
 #endif // AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
 #endif // AFE_ADC_ISR
 	  }
-#else
-//	if (_rdy2cpy)
-//	  {
-//	    _rdy2cpy = 0;
-//	    s_ADC_Measurement _ADC_Measurement_HAL_ADC_ConvCpltCallback;
-//	    _ADC_Measurement_HAL_ADC_ConvCpltCallback.timestamp_ms = HAL_GetTick ();
-//	    for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
-//	      {
-//		_ADC_Measurement_HAL_ADC_ConvCpltCallback.adc_value = 0x1FFF & adc_dma_buffer[i];
-//		add_to_buffer (&bufferADC[i], &_ADC_Measurement_HAL_ADC_ConvCpltCallback);
-//	      }
-//	  }
-#endif
+#endif // AFE_ADC_SOFT_LAUNCHED
 	/* Update CAN machine */
 	can_machine ();
 	/* Check if any new CAN message received */

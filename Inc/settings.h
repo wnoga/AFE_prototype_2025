@@ -67,7 +67,7 @@
 /* can_functions */
 #if HEADLESS_AFE_CAN_ID
 #else
-#define AFE_CAN_ID 41
+#define AFE_CAN_ID 28
 #endif
 
 #define CAN_ID_IN_MSG ((1<<10) | (AFE_CAN_ID << 2))
@@ -77,6 +77,5 @@
 #define CAN_MSG_RECIEVED_TIMEOUT_MS 5000
 #define USE_CAN_MSG_BURST_DELAY_MS 1
 #define WATCHDOG_FOR_CAN_RECIEVER_ENABLED 1
-
 
 #endif /* SETTINGS_H_ */

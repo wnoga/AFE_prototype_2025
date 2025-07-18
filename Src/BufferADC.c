@@ -13,16 +13,6 @@
 
 #include <stdint.h>
 
-/**
- * @brief Initializes the circular buffer for ADC measurements.
- *
- * This function sets up the circular buffer by initializing its head and tail pointers,
- * assigning the provided buffer, setting the buffer size, and specifying the minimum
- * time difference between measurements. It also initializes the first element of the buffer.
- *
- * @param cb Pointer to the circular buffer structure.
- * @param buffer Pointer to the array where ADC measurements will be stored.
- */
 void __attribute__ ((cold, optimize("-Os")))
 init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uint32_t dt_ms)
 {
@@ -41,35 +31,12 @@ init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uin
   memset (cb->buffer, 0, buffer_size * sizeof(s_ADC_Measurement));
 }
 
-/**
- * @brief Gets the number of items currently stored in the circular buffer.
- *
- * This function calculates the number of items in the circular buffer by
- * comparing the head and tail pointers. It handles the wrap-around case
- * where the tail is ahead of the head.
- *
- * @param cb Pointer to the circular buffer structure.
- * @return The number of items in the buffer.
- */
 inline size_t __attribute__ ((always_inline, optimize("-O3")))
 CircularBuffer_GetItemCount (s_BufferADC *cb)
 {
   return cb->head >= cb->tail ? cb->head - cb->tail : cb->buffer_size - (cb->tail - cb->head);
 }
 
-/**
- * @brief Retrieves the N latest measurements from the buffer, considering time constraints.
- *
- * This function retrieves up to N of the most recent measurements from the circular buffer,
- * ensuring that each measurement's timestamp is within the specified time window.
- *
- * @param cb Pointer to the circular buffer structure.
- * @param N The maximum number of measurements to retrieve.
- * @param here Pointer to the array where the retrieved measurements will be stored.
- * @param timestamp_ms The current timestamp, used to check the time window.
- * @param max_dt_ms The maximum allowed time difference between the current timestamp and a measurement's timestamp.
- * @return The number of measurements actually retrieved.
- */
 size_t __attribute__ ((optimize("-O3")))
 get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N, s_ADC_Measurement *here,
 				    uint32_t timestamp_ms, uint32_t max_dt_ms)
@@ -102,27 +69,12 @@ get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N, s_ADC_Measurement
   return N;
 }
 
-/**
- * @brief Retrieves the N latest measurements from the buffer without time constraints.
- *
- * This function retrieves the N most recent measurements from the circular buffer
- * without considering any time window. It uses the HAL_GetTick() function to get
- * the current timestamp and sets the maximum time difference to the maximum value of uint32_t.
- *
- * @param cb Pointer to the circular buffer structure.
- * @param N The maximum number of measurements to retrieve.
- * @param here Pointer to the array where the retrieved measurements will be stored.
- * @return The number of measurements actually retrieved.
- */
 size_t
 get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here)
 {
   return get_n_latest_from_buffer_max_dt_ms (cb, N, here, HAL_GetTick (), UINT32_MAX);
 }
 
-/**
- * @brief Adds a new measurement to the circular buffer.
- */
 inline void __attribute__ ((always_inline, optimize("-O3")))
 add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement)
 {

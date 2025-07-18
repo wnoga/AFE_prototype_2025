@@ -98,12 +98,6 @@ typedef enum
   AFECommandSubdevice_both 	= 0b00000011,
 } AFECommandSubdevice;
 
-//typedef enum
-//{
-//  e_subdevice_master=0,
-//  e_subdevice_slave,
-//} e_subdevice;
-
 typedef enum
 {
   e_ADC_CHANNEL_DC_LEVEL_MEAS0=0,
@@ -137,16 +131,12 @@ typedef struct
   AFECommandSubdevice subdevice; // master or slave
   s_BufferADC *buffer_ADC; // pointer to buffer for ADC structure
   /* buffer and averaging settings */
-//  size_t buffer_size;
-//  uint32_t dt_ms; // time between two measurements
   e_average averaging_method;
-//  uint32_t tau; // parameter for averaging
 
   uint32_t max_dt_ms; // maximum time difference in averaging
   float multiplicator; // multiplicator for raw ADC value (convert to real value)
   float a; // for f=a*x+b
   float b; // for f=a*x+b
-//  uint32_t bin_width_ms; // bin width for averaging
   float alpha; // weight modificator for averaging
   uint32_t max_N; // maximum number of data used for averaging
 

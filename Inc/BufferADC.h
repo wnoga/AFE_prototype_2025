@@ -28,31 +28,18 @@ typedef struct __attribute__((packed))
 // Circular buffer structure
 typedef struct __attribute__((packed))
 {
-//    ADC_Measurement buffer[MAX_BUFFER_SIZE]; // Array of ADC measurements
   s_ADC_Measurement *buffer;
   size_t head;  // Points to the next insertion position
   size_t tail;  // Points to the next element to be read
-//    size_t count; // Current number of elements in the buffer
   size_t buffer_size;
   uint32_t dt_ms; // Minimum time in milliseconds between measurements
-//  size_t id; // Buffer ID
 } s_BufferADC;
 
-void init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer,
-	     size_t buffer_size, uint32_t dt_ms);
-
+void init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uint32_t dt_ms);
 size_t CircularBuffer_GetItemCount (s_BufferADC *cb);
-
-int check_time_diff_is_more_than (uint32_t measurement_timestamp_ms,
-			      uint32_t timestamp_ms, uint32_t max_dt_ms,
-			      uint32_t dt_ms);
-
-size_t get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N,
-				    s_ADC_Measurement *here,
-				    uint32_t timestamp_ms, uint32_t max_dt_ms);
-
+int check_time_diff_is_more_than (uint32_t measurement_timestamp_ms, uint32_t timestamp_ms, uint32_t max_dt_ms, uint32_t dt_ms);
+size_t get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N,s_ADC_Measurement *here, uint32_t timestamp_ms, uint32_t max_dt_ms);
 size_t get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here);
-
 void add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement);
 
 
