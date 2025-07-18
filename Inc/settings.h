@@ -9,11 +9,13 @@
 #define SETTINGS_H_
 
 #define MACHINE_DEBUG_RUN 0
+#define USE_UART_AS_DEBUG_OUTPUT 0
 
 #define AFE_ADC_SOFT_LAUNCHED 1
-#define AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL 0
+#define AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL 1
 #define AFE_ADC_HARD_BY_TIMER 0
 #define AFE_ADC_ISR 0
+#define AFE_ADC_SAMPLING_TIME ADC_SAMPLETIME_71CYCLES_5
 
 #define TIMEOUT_SPI1_MS 5000
 #define USE_SHIFTING_IN_SetPinFromArray 0
@@ -67,7 +69,7 @@
 /* can_functions */
 #if HEADLESS_AFE_CAN_ID
 #else
-#define AFE_CAN_ID 28
+#define AFE_CAN_ID 41
 #endif
 
 #define CAN_ID_IN_MSG ((1<<10) | (AFE_CAN_ID << 2))

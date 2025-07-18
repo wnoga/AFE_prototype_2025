@@ -110,12 +110,6 @@ static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_DMA_Init(void);
 
-static void
-blink_main(void)
-{
-  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
-}
-
 /** UID **/
 static void getUID(void);
 uint32_t  UID[3];
@@ -503,8 +497,6 @@ static void MX_ADC_Init(void)
 
   /* USER CODE END ADC_Init 0 */
 
-  ADC_ChannelConfTypeDef sConfig = {0};
-  const uint32_t SamplingTimeCommon = ADC_SAMPLETIME_71CYCLES_5;
   /* USER CODE BEGIN ADC_Init 1 */
 #if AFE_ADC_SOFT_LAUNCHED
   hadc.Instance = ADC1;
@@ -513,6 +505,7 @@ static void MX_ADC_Init(void)
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
   hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc.Init.SamplingTimeCommon = AFE_ADC_SAMPLING_TIME;
 #if AFE_ADC_ISR
   hadc.Init.LowPowerAutoWait = DISABLE;
 #else
@@ -535,7 +528,7 @@ static void MX_ADC_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc.Instance = ADC1;
-  hadc.Init.SamplingTimeCommon = SamplingTimeCommon;
+  hadc.Init.SamplingTimeCommon = AFE_ADC_SAMPLING_TIME;
   hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc.Init.Resolution = ADC_RESOLUTION_12B;
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
@@ -570,24 +563,7 @@ static void MX_ADC_Init(void)
   /* USER CODE BEGIN ADC_Init 2 */
 #endif // AFE_ADC_SOFT_LAUNCHED
   // Configure the 8 specific channels
-  const uint32_t channels[] =
-    {
-    ADC_CHANNEL_0,
-    ADC_CHANNEL_1,
-    ADC_CHANNEL_2,
-    ADC_CHANNEL_3,
-    ADC_CHANNEL_6,
-    ADC_CHANNEL_7,
-    ADC_CHANNEL_8,
-    ADC_CHANNEL_9 };
-
-  sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-  sConfig.SamplingTime = SamplingTimeCommon;
-  for (size_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
-    {
-      sConfig.Channel = channels[i0];
-      HAL_ADC_ConfigChannel (&hadc, &sConfig);
-    }
+  config_adc_channels(&hadc);
   /* USER CODE END ADC_Init 2 */
 
 }
@@ -644,11 +620,13 @@ getUID (void)
 void _Error_Handler(char *file, int line)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
+#if USE_UART_AS_DEBUG_OUTPUT
   for (uint8_t i0 = 0; i0 < 40; ++i0)
     {
       _delay(50);
       blink1 ();
     }
+#endif
   /* User can add his own implementation to report the HAL error return state */
   while(1)
   {

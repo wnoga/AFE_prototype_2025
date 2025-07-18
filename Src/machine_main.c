@@ -12,12 +12,18 @@
 #include <math.h>
 #include <stdbool.h>
 
+#define X_FAST_HANDLE_FUNCTION_DECLARE static inline void __attribute__((optimize("-O3")))
+#define X_SLOW_HANDLE_FUNCTION_DECLARE static inline void __attribute__((optimize("-Os")))
+#define X_MEDIUM_HANDLE_FUNCTION_DECLARE static inline void __attribute__((optimize("-O2")))
+
 #if AFE_ADC_SOFT_LAUNCHED
 static int8_t afe_adc_soft_active = 0;
 static uint32_t afe_adc_soft_timestamp_ms = 0;
 static uint32_t afe_adc_soft_period_ms = 500;
+#if !AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
 static int8_t afe_adc_i = 0;
 static int8_t afe_adc_soft_started = 0;
+#endif // !AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
 #endif
 
 volatile uint16_t adc_dma_buffer[AFE_NUMBER_OF_CHANNELS];
@@ -55,6 +61,31 @@ static s_channelSettings afe_channelSettings[AFE_NUMBER_OF_CHANNELS];
 static s_regulatorSettings afe_regulatorSettings[AFE_NUMBER_OF_SUBDEVICES]; // Regulator settings for master and slave
 
 static e_machine_main machine_main_status = e_machine_main_init;
+
+void __attribute__ ((cold, optimize("-Os")))
+config_adc_channels (ADC_HandleTypeDef *hadc)
+{
+  ADC_ChannelConfTypeDef sConfig =
+    { 0 };
+  const uint32_t channels[] =
+    {
+    ADC_CHANNEL_0,
+    ADC_CHANNEL_1,
+    ADC_CHANNEL_2,
+    ADC_CHANNEL_3,
+    ADC_CHANNEL_6,
+    ADC_CHANNEL_7,
+    ADC_CHANNEL_8,
+    ADC_CHANNEL_9 };
+
+  sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
+  sConfig.SamplingTime = AFE_ADC_SAMPLING_TIME;
+  for (size_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
+    {
+      sConfig.Channel = channels[i0];
+      HAL_ADC_ConfigChannel (hadc, &sConfig);
+    }
+}
 
 void
 update_buffer_by_channelSettings (s_channelSettings *channelSettings)
@@ -317,7 +348,7 @@ machine_main_init_0 (void)
       afe_regulatorSettings[i0].ramp_bit_step = 1;
 #endif
       afe_regulatorSettings[i0].ramp_bit_step_every_ms =
-	  AFE_REGULATOR_DEFAULT_ramp_bit_step_every_ms;
+      AFE_REGULATOR_DEFAULT_ramp_bit_step_every_ms;
       afe_regulatorSettings[i0].ramp_bit_step_timestamp_old_ms = 0;
       afe_regulatorSettings[i0].ramp_curent_voltage_set_bits = AFE_DAC_START;
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits = AFE_DAC_START;
@@ -569,7 +600,7 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 
 /* --- System & Informational Command Handlers --- */
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_MEDIUM_HANDLE_FUNCTION_DECLARE
 handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   reply->id = CAN_ID_IN_MSG;
@@ -582,7 +613,7 @@ handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   enqueueSubdeviceStatus (reply, masked_channel);
 }
 
-static inline void __attribute__((always_inline, optimize("-Os")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_getSerialNumber (CAN_Message_t *reply)
 {
   reply->id |= e_CANIdFunctionCode_multipleRead & 0b11;
@@ -595,7 +626,7 @@ handle_getSerialNumber (CAN_Message_t *reply)
     }
 }
 
-static inline void __attribute__((always_inline, optimize("-Os")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_getVersion (CAN_Message_t *reply)
 {
   reply->dlc = 2 + verArrLen;
@@ -661,7 +692,7 @@ machine_set_tim_period_ms (TIM_HandleTypeDef *htim, uint32_t period_ms)
 }
 #endif // AFE_ADC_HARD_BY_TIMER
 
-static inline void __attribute__((always_inline, optimize("-Os")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint32_t ms = 0;
@@ -669,7 +700,7 @@ handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 #if AFE_ADC_SOFT_LAUNCHED
   afe_adc_soft_active = 1;
   afe_adc_soft_period_ms = ms;
-  afe_adc_soft_timestamp_ms = HAL_GetTick();
+  afe_adc_soft_timestamp_ms = HAL_GetTick ();
 #else // AFE_ADC_SOFT_LAUNCHED
   HAL_ADC_Stop_DMA (&hadc); // Important: Stop before restart
   HAL_ADC_Start_DMA (&hadc, &adc_dma_buffer[0], AFE_NUMBER_OF_CHANNELS);
@@ -684,7 +715,7 @@ handle_startADC (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 
 /* --- Data Acquisition Command Handlers --- */
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_getSensorDataSi_last_byMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -710,7 +741,7 @@ handle_getSensorDataSi_last_byMask (const s_can_msg_recieved *msg, CAN_Message_t
 						 forThisChannels, reply->timestamp);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_getSensorDataSi_average_byMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -734,7 +765,7 @@ handle_getSensorDataSi_average_byMask (const s_can_msg_recieved *msg, CAN_Messag
 						 forThisChannels, reply->timestamp);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_getSensorDataBytes_last_byMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -760,7 +791,7 @@ handle_getSensorDataBytes_last_byMask (const s_can_msg_recieved *msg, CAN_Messag
 						 forThisChannels, reply->timestamp);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_getSensorDataBytes_average_byMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -788,7 +819,7 @@ handle_getSensorDataBytes_average_byMask (const s_can_msg_recieved *msg, CAN_Mes
 }
 /* --- Hardware Control Command Handlers --- */
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_transmitSPIData (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t spiData[5];
@@ -805,7 +836,7 @@ handle_transmitSPIData (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-Os")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_setAD8402Value (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -825,7 +856,7 @@ handle_setAD8402Value (const s_can_msg_recieved *msg, CAN_Message_t *reply)
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_writeGPIO (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   GPIO_TypeDef *GPIOx = GetGPIOPortByEnumerator (msg->Data[2]);
@@ -841,7 +872,7 @@ handle_writeGPIO (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 
 /* --- Temperature Loop & DAC Command Handlers --- */
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_set_temperature_loop_state (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -859,7 +890,7 @@ handle_set_temperature_loop_state (const s_can_msg_recieved *msg, CAN_Message_t 
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_setDACValueRaw_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channels = msg->Data[2];
@@ -878,7 +909,7 @@ handle_setDACValueRaw_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Messag
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_setDACValueSi_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   float valueSi;
@@ -899,7 +930,7 @@ handle_setDACValueSi_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_setDACTargetSi_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   float valueSi;
@@ -920,7 +951,7 @@ handle_setDACTargetSi_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Messag
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_stopTemperatureLoopForAllChannels (CAN_Message_t *reply)
 {
   for (uint8_t channel = 0; channel < AFE_NUMBER_OF_SUBDEVICES; ++channel)
@@ -932,7 +963,7 @@ handle_stopTemperatureLoopForAllChannels (CAN_Message_t *reply)
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_setDAC_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   uint8_t channel_mask = msg->Data[2];
@@ -957,7 +988,7 @@ handle_setDAC_bySubdeviceMask (const s_can_msg_recieved *msg, CAN_Message_t *rep
   CANCircularBuffer_enqueueMessage (&canTxBuffer, reply);
 }
 
-static inline void __attribute__((always_inline, optimize("-O3")))
+X_FAST_HANDLE_FUNCTION_DECLARE
 handle_setDACRampOneBytePerMillisecond (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
 #warning "Implement and test this"
@@ -970,7 +1001,7 @@ handle_setDACRampOneBytePerMillisecond (const s_can_msg_recieved *msg, CAN_Messa
 /* --- Channel & Regulator Settings Handlers --- */
 
 // Generic handler for setting a property on multiple channels based on a mask
-static void __attribute__((optimize("-O3")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_set_channel_property (const s_can_msg_recieved *msg, CAN_Message_t *reply, size_t offset,
 			     size_t size, bool reset_buffer)
 {
@@ -994,7 +1025,7 @@ handle_set_channel_property (const s_can_msg_recieved *msg, CAN_Message_t *reply
 }
 
 // Generic handler for setting a property on subdevices (regulators)
-static void __attribute__((optimize("-O3")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_set_regulator_property (const s_can_msg_recieved *msg, CAN_Message_t *reply, size_t offset,
 			       size_t size)
 {
@@ -1015,7 +1046,7 @@ handle_set_regulator_property (const s_can_msg_recieved *msg, CAN_Message_t *rep
 
 /* --- Unknown Command Handler --- */
 
-static inline void __attribute__((always_inline, optimize("-Os")))
+X_SLOW_HANDLE_FUNCTION_DECLARE
 handle_unknown_command (CAN_Message_t *reply)
 {
   reply->data[0] = 0xFF;
@@ -1482,45 +1513,12 @@ machine_debug_run (void)
 }
 #endif
 
-void
-machine_main (void)
-{
-  switch (machine_main_status)
-    {
-    case e_machine_main_init:
-      {
-	machine_main_status = e_machine_main_idle;
-	modify_aurt_as_test_led ();
-
-	const uint32_t dd = 25;
-	for (uint8_t _ = 0; _ < 10; ++_)
-	  {
-	    blink1 ();
-	    HAL_Delay (dd);
-	  }
-	HAL_GPIO_WritePin (GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
-	for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
-	  {
-	    adc_dma_buffer[i0] = 0;
-	  }
-	afe_adc_i = 0;
-	afe_adc_soft_started = 0;
-#if MACHINE_DEBUG_RUN
-	_startADC (0);
-	uint16_t dac_value_master = 3000;
-	uint16_t dac_value_slave = 3000;
-	HAL_DAC_Start (&hdac, DAC_CHANNEL_1);
-	HAL_DAC_Start (&hdac, DAC_CHANNEL_2);
-	HAL_DAC_SetValue (&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value_master);
-	HAL_DAC_SetValue (&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dac_value_slave);
-#endif
-	break;
-      }
-    case e_machine_main_idle:
-      {
 #if AFE_ADC_SOFT_LAUNCHED
-	if (afe_adc_soft_active)
-	  {
+static inline void __attribute__((always_inline, optimize("-O3")))
+machine_adc_pool (void)
+{
+  if (afe_adc_soft_active)
+    {
 #if AFE_ADC_ISR
 	    if (afe_adc_i == AFE_NUMBER_OF_CHANNELS)
 	      {
@@ -1542,30 +1540,32 @@ machine_main (void)
 		HAL_ADC_Start_IT (&hadc);
 	      }
 #else // AFE_ADC_ISR
-	    if ((HAL_GetTick () - afe_adc_soft_timestamp_ms) >= afe_adc_soft_period_ms)
-	      {
-		afe_adc_soft_timestamp_ms = HAL_GetTick ();
+      if ((HAL_GetTick () - afe_adc_soft_timestamp_ms) >= afe_adc_soft_period_ms)
+	{
+	  afe_adc_soft_timestamp_ms = HAL_GetTick ();
 #if AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
-		s_ADC_Measurement _adc;
-		_adc.timestamp_ms = afe_adc_soft_timestamp_ms;
-		for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
-		  {
-		    if (HAL_ADC_Start (&hadc) != HAL_OK)
-		      {
-			Error_Handler();
-		      }
-		    if (HAL_ADC_PollForConversion (&hadc, 100) != HAL_OK)
-		      {
-			Error_Handler();
-		      }
+	  s_ADC_Measurement _adc;
+	  _adc.timestamp_ms = afe_adc_soft_timestamp_ms;
 
-		    adc_dma_buffer[i] = (uint16_t) HAL_ADC_GetValue (&hadc);
-		  }
-		for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
-		  {
-		    _adc.adc_value = adc_dma_buffer[i];
-		    add_to_buffer (&bufferADC[i], &_adc);
-		  }
+	  for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
+	    {
+	      if (HAL_ADC_Start (&hadc) != HAL_OK)
+		{
+		  Error_Handler();
+		}
+	      if (HAL_ADC_PollForConversion (&hadc, 100) != HAL_OK)
+		{
+		  Error_Handler();
+		}
+
+	      adc_dma_buffer[i] = (uint16_t) HAL_ADC_GetValue (&hadc);
+	    }
+	  for (uint8_t i = 0; i < AFE_NUMBER_OF_CHANNELS; ++i)
+	    {
+	      _adc.adc_value = adc_dma_buffer[i];
+	      add_to_buffer (&bufferADC[i], &_adc);
+	    }
+	}
 #else // AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
 		if (afe_adc_soft_started) /* ERROR DETECTED*/
 		  {
@@ -1602,7 +1602,59 @@ machine_main (void)
 	      }
 #endif // AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
 #endif // AFE_ADC_ISR
-	  }
+    }
+}
+#endif // AFE_ADC_SOFT_LAUNCHED
+
+static void __attribute__((cold, optimize("-Os")))
+machine_main_init_case (void)
+{
+  machine_main_status = e_machine_main_idle;
+#if USE_UART_AS_DEBUG_OUTPUT
+  modify_aurt_as_test_led ();
+
+  const uint32_t dd = 25;
+  for (uint8_t _ = 0; _ < 10; ++_)
+    {
+      blink1 ();
+      HAL_Delay (dd);
+    }
+  HAL_GPIO_WritePin (GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+#endif
+
+  for (uint8_t i0 = 0; i0 < AFE_NUMBER_OF_CHANNELS; ++i0)
+    {
+      adc_dma_buffer[i0] = 0;
+    }
+#if !AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
+	afe_adc_i = 0;
+	afe_adc_soft_started = 0;
+#endif // !AFE_ADC_SOFT_LAUNCHED_SIMPLE_POOL
+#if MACHINE_DEBUG_RUN
+	_startADC (0);
+	uint16_t dac_value_master = 3000;
+	uint16_t dac_value_slave = 3000;
+	HAL_DAC_Start (&hdac, DAC_CHANNEL_1);
+	HAL_DAC_Start (&hdac, DAC_CHANNEL_2);
+	HAL_DAC_SetValue (&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value_master);
+	HAL_DAC_SetValue (&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dac_value_slave);
+#endif
+}
+
+inline void __attribute__((always_inline, optimize("-O3")))
+machine_main (void)
+{
+  switch (machine_main_status)
+    {
+    case e_machine_main_init:
+      {
+	machine_main_init_case();
+	break;
+      }
+    case e_machine_main_idle:
+      {
+#if AFE_ADC_SOFT_LAUNCHED
+	machine_adc_pool ();
 #endif // AFE_ADC_SOFT_LAUNCHED
 	/* Update CAN machine */
 	can_machine ();
@@ -1622,8 +1674,10 @@ machine_main (void)
 	break;
       }
     default:
-      Error_Handler();
-      break;
+      {
+	Error_Handler();
+	break;
+      }
     }
 }
 

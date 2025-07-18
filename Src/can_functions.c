@@ -50,11 +50,13 @@ _delay (size_t ms)
     }
 }
 
+#if USE_UART_AS_DEBUG_OUTPUT
 void
 blink1 (void)
 {
   HAL_GPIO_TogglePin (GPIOA, GPIO_PIN_9);
 }
+#endif
 
 GPIO_TypeDef*
 GetGPIOPortByEnumerator (uint8_t enumerator)
@@ -328,6 +330,7 @@ can_send_msg (CAN_HandleTypeDef *hcan, uint8_t *msg, size_t len, uint8_t own_id,
   hcan->pTxMsg->RTR = CAN_RTR_DATA;
 }
 
+#if USE_UART_AS_DEBUG_OUTPUT
 void
 modify_aurt_as_test_led (void)
 {
@@ -342,6 +345,7 @@ modify_aurt_as_test_led (void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init (GPIOA, &GPIO_InitStruct);
 }
+#endif
 
 typedef enum
 {

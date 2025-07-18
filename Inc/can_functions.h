@@ -95,7 +95,9 @@ void CANCircularBuffer_enqueueMessage_data (CANCircularBuffer_t *cb, CAN_Message
 void CANCircularBuffer_enqueueMessage_data_float (CANCircularBuffer_t *cb, CAN_Message_t *tmp, uint8_t msg_index, uint8_t total_msg_count, uint8_t channel, float *value);
 void CANCircularBuffer_enqueueMessage_timestamp_ms (CANCircularBuffer_t *cb, CAN_Message_t *tmp, uint8_t msg_index, uint8_t total_msg_count, uint8_t channel_mask, uint32_t timestamp_ms);
 void _delay (size_t ms);
+#if USE_UART_AS_DEBUG_OUTPUT
 void blink1 (void);
+#endif
 
 extern uint8_t can_machine_inited_0;
 

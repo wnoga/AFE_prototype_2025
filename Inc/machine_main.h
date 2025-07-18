@@ -20,6 +20,7 @@ typedef enum
 
 } e_machine_main;
 
+void config_adc_channels (ADC_HandleTypeDef *hadc);
 
 void enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel);
 void machine_main_init_0 (void);
