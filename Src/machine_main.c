@@ -379,7 +379,7 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
   // Temperature loop is disabled, do nothing.
   return;
 #endif // HARDWARE_CONTROL_TEMPERATURE_LOOP_DISABLED
-  if (!rptr->enabled)
+  if (rptr->enabled == 0)
     {
       return;
     }
@@ -443,7 +443,7 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
   // DAC ramping is disabled, do nothing.
   return;
 #else // HARDWARE_CONTROL_TEMPERATURE_LOOP_RAMP_BIT_DISABLED
-  if (!rptr->ramp_enabled)
+  if (rptr->ramp_enabled == 0)
     {
       return;
     }

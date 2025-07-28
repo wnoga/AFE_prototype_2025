@@ -71,7 +71,7 @@
 /* can_functions */
 #if HEADLESS_AFE_CAN_ID
 #else
-#define AFE_CAN_ID 28
+#define AFE_CAN_ID 41
 #endif
 
 #define CAN_ID_IN_MSG ((1<<10) | (AFE_CAN_ID << 2))
