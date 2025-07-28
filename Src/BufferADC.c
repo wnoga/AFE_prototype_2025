@@ -93,6 +93,7 @@ add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement)
   // Copy the new measurement to the buffer at the current head position
   cb->buffer[cb->head].adc_value = measurement->adc_value;
   cb->buffer[cb->head].timestamp_ms = measurement->timestamp_ms;
+  cb->last_data_ms = measurement->timestamp_ms;
 
   // Increment head, handling wrap-around
   ++cb->head;

@@ -182,6 +182,8 @@ int main(void)
     MX_TIM1_Init();
     MX_ADC_Init();
 
+    HAL_Delay(50); /* Wait before watchdog init */
+
     MX_IWDG_Init();
 
 //    __HAL_RCC_DBGMCU_CLK_ENABLE();

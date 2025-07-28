@@ -45,6 +45,8 @@ typedef enum
   AFECommand_setCanMsgBurstDelay_ms = 0xA3,
   AFECommand_setAfe_can_watchdog_timeout_ms = 0xA4,
 
+  AFECommand_setTemperatureLoop_loop_every_ms = 0xB0,
+
   AFECommand_setTemperatureLoopForChannelState_byMask_asStatus = 0xC1,
   AFECommand_setDACValueRaw_bySubdeviceMask = 0xC2,
   AFECommand_setDACValueSi_bySubdeviceMask = 0xC3,
@@ -58,7 +60,6 @@ typedef enum
   AFECommand_setAveragingBufferSize_byMask = 0xD2,
   AFECommand_setChannel_dt_ms_byMask = 0xD3,
   AFECommand_setAveraging_max_dt_ms_byMask = 0xD4,
-  AFECommand_setChannel_multiplicator_byMask = 0xD5,
   AFECommand_setAveragingSubdevice = 0xD6,
   AFECommand_setChannel_a_byMask = 0xD7,
   AFECommand_setChannel_b_byMask = 0xD8,
@@ -134,7 +135,6 @@ typedef struct
   e_average averaging_method;
 
   uint32_t max_dt_ms; // maximum time difference in averaging
-  float multiplicator; // multiplicator for raw ADC value (convert to real value)
   float a; // for f=a*x+b
   float b; // for f=a*x+b
   float alpha; // weight modificator for averaging
@@ -178,10 +178,13 @@ typedef struct
   float V; // Last voltage
   float T; // Last temperature
   float V_target; // Last voltage target
+
+  uint32_t loop_every_ms;
+  uint32_t last_loop_every_ms;
 } s_regulatorSettings;
 
 
-float get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms, e_average method, float alpha, float multiplicator);
+float get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms, e_average method, float alpha);
 float get_average_atSettings (s_channelSettings *a, uint32_t timestamp);
 float get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings);
 float faxplusb (float value, float a, float b);

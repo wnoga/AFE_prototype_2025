@@ -314,7 +314,6 @@ machine_main_init_0 (void)
       afe_channelSettings[i0].alpha = 1.0;
       afe_channelSettings[i0].buffer_ADC = &bufferADC[i0];
       afe_channelSettings[i0].max_dt_ms = 3600 * 1000; // 1 hour
-      afe_channelSettings[i0].multiplicator = 1.0;
       afe_channelSettings[i0].a = 1.0;
       afe_channelSettings[i0].b = 0.0;
       afe_channelSettings[i0].max_N = ADC_MEASUREMENT_RAW_SIZE_MAX;
@@ -349,13 +348,13 @@ machine_main_init_0 (void)
 #endif
       afe_regulatorSettings[i0].ramp_bit_step_every_ms =
       AFE_REGULATOR_DEFAULT_ramp_bit_step_every_ms;
-      afe_regulatorSettings[i0].ramp_bit_step_timestamp_old_ms = 0;
       afe_regulatorSettings[i0].ramp_curent_voltage_set_bits = AFE_DAC_START;
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits = AFE_DAC_START;
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits_old = 0x0FFF & (~AFE_DAC_START);
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
 #endif // AFE_REGULATOR_SET_DEFAULT_RAMP
+      afe_regulatorSettings[i0].loop_every_ms = AFE_TEMPERATURE_LOOP_DEFAULT_loop_every_ms;
     }
 
   /* Set channel for temperature */
@@ -384,51 +383,57 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
     {
       return;
     }
-  // 1. Get the current temperature from the sensor.
-  float current_temperature = get_average_atSettings (rptr->temperature_channelSettings_ptr,
-						      timestamp_ms);
-  // 2. Validate the temperature reading.
-  if (isnan(current_temperature))
+  // 0. Limit frequency.
+  if ((timestamp_ms - rptr->last_loop_every_ms)
+      < rptr->loop_every_ms)
     {
-      /* Skip if temperature reading is not a number (e.g., sensor error). */
-      return;
-    }
+      rptr->last_loop_every_ms = timestamp_ms;
+      // 1. Get the current temperature from the sensor.
+      float current_temperature = get_average_atSettings (rptr->temperature_channelSettings_ptr,
+							  timestamp_ms);
+      // 2. Validate the temperature reading.
+      if (isnan(current_temperature))
+	{
+	  /* Skip if temperature reading is not a number (e.g., sensor error). */
+	  return;
+	}
 
-  // 3. Check if the temperature has changed significantly (outside the dead-band).
-  float temperature_delta = fabsf (current_temperature - rptr->T_old);
-  if (temperature_delta < rptr->dT)
-    {
-      // No significant change, no adjustment needed.
-      return;
-    }
+      // 3. Check if the temperature has changed significantly (outside the dead-band).
+      float temperature_delta = fabsf (current_temperature - rptr->T_old);
+      if (temperature_delta < rptr->dT)
+	{
+	  // No significant change, no adjustment needed.
+	  return;
+	}
 
-  // 4. Calculate the new target voltage and corresponding DAC value.
-  float new_target_voltage = get_voltage_for_SiPM_x (current_temperature, rptr);
-  uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (new_target_voltage, rptr);
+      // 4. Calculate the new target voltage and corresponding DAC value.
+      float new_target_voltage = get_voltage_for_SiPM_x (current_temperature, rptr);
+      uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (new_target_voltage, rptr);
 
-  // 5. Update the regulator's state with the new values.
-  // Set the target for the DAC ramp function.
-  rptr->ramp_target_voltage_set_bits = new_target_dac_bits;
+      // 5. Update the regulator's state with the new values.
+      // Set the target for the DAC ramp function.
+      rptr->ramp_target_voltage_set_bits = new_target_dac_bits;
 
-  // Update status variables for monitoring.
-  rptr->T = current_temperature;
-  rptr->V_target = new_target_voltage;
+      // Update status variables for monitoring.
+      rptr->T = current_temperature;
+      rptr->V_target = new_target_voltage;
 
-  // Update the last-seen temperature for the next dead-band check.
-  rptr->T_old = current_temperature;
+      // Update the last-seen temperature for the next dead-band check.
+      rptr->T_old = current_temperature;
 
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
-  // 6. Send a debug message via CAN if the target DAC value has changed.
-  if (new_target_dac_bits != rptr->ramp_target_voltage_set_bits_old)
-    {
-      CAN_Message_t tmp; // Local message for debug
-      tmp.id = CAN_ID_IN_MSG;
-      tmp.timestamp = HAL_GetTick (); // for timeout
-      tmp.data[0] = AFECommand_debug_machine_control;
-      enqueueSubdeviceStatus (&tmp, rptr->subdevice);
-    }
-  rptr->ramp_target_voltage_set_bits_old = new_target_dac_bits;
+      // 6. Send a debug message via CAN if the target DAC value has changed.
+      if (new_target_dac_bits != rptr->ramp_target_voltage_set_bits_old)
+	{
+	  CAN_Message_t tmp; // Local message for debug
+	  tmp.id = CAN_ID_IN_MSG;
+	  tmp.timestamp = HAL_GetTick (); // for timeout
+	  tmp.data[0] = AFECommand_debug_machine_control;
+	  enqueueSubdeviceStatus (&tmp, rptr->subdevice);
+	}
+      rptr->ramp_target_voltage_set_bits_old = new_target_dac_bits;
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+    }
 }
 
 static inline void __attribute__((always_inline, optimize("-O3")))
@@ -805,8 +810,7 @@ handle_getSensorDataBytes_average_byMask (const s_can_msg_recieved *msg, CAN_Mes
 	{
 	  s_channelSettings *a = &afe_channelSettings[channel];
 	  adc_value_real = get_average_from_buffer (a->buffer_ADC, a->max_N, reply->timestamp,
-						    a->max_dt_ms, a->averaging_method, a->alpha,
-						    a->multiplicator);
+						    a->max_dt_ms, a->averaging_method, a->alpha);
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, msg_index,
 						       total_msg_count, 1 << channel,
 						       &adc_value_real);
@@ -1202,6 +1206,13 @@ can_execute (const s_can_msg_recieved msg)
 	break;
       }
 
+    case AFECommand_setTemperatureLoop_loop_every_ms:
+      {
+	handle_set_regulator_property (&msg, &tmp, offsetof(s_regulatorSettings, loop_every_ms),
+				       sizeof(uint32_t));
+	break;
+      }
+
       /* 0xC0 */
       /* Temperature loop runtime */
     case AFECommand_setTemperatureLoopForChannelState_byMask_asStatus: // start or stop [Data[3] temperature loop for channel [Data[2]]
@@ -1272,12 +1283,6 @@ can_execute (const s_can_msg_recieved msg)
       {
 	handle_set_channel_property (&msg, &tmp, offsetof(s_channelSettings, max_dt_ms),
 				     sizeof(uint32_t), true);
-	break;
-      }
-    case AFECommand_setChannel_multiplicator_byMask: // set averagingSettings.multiplicator
-      {
-	handle_set_channel_property (&msg, &tmp, offsetof(s_channelSettings, multiplicator),
-				     sizeof(float), true);
 	break;
       }
     case AFECommand_setAveragingSubdevice: // set averagingSettings.subdevice

@@ -30,6 +30,8 @@
 #define HARDWARE_CONTROL_SPI_DISABLED 0
 #define HARDWARE_CONTROL_GPIO_DISABLED 0
 
+#define AFE_TEMPERATURE_LOOP_DEFAULT_loop_every_ms 10
+
 #define USE_SMALLER_STEPS_NEAR_DAC_TARGET 1
 
 #define TEMPERATURE_LOOP_CORRECT_BY_READING_ENABLED 0
@@ -69,7 +71,7 @@
 /* can_functions */
 #if HEADLESS_AFE_CAN_ID
 #else
-#define AFE_CAN_ID 41
+#define AFE_CAN_ID 28
 #endif
 
 #define CAN_ID_IN_MSG ((1<<10) | (AFE_CAN_ID << 2))

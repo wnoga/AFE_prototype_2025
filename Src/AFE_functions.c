@@ -297,7 +297,7 @@ calculate_average (float sum, float weight_sum, e_average method, size_t cnt,
 
 float __attribute__ ((optimize("-O3")))
 get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms,
-			 e_average method, float alpha, float multiplicator)
+			 e_average method, float alpha)
 {
   if (cb->head == cb->tail)
     {
@@ -308,7 +308,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   s_ADC_Measurement *ptr0 = &cb->buffer[i_0];
   if ((cb_count == 1) || (method == e_average_NONE))
     {
-      return (float) ptr0->adc_value * multiplicator;
+      return (float) ptr0->adc_value;
     }
   else if (N > cb_count)
     {
@@ -368,7 +368,6 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
     {
       average_result = calculate_average (sum, weight_sum, method, cnt, ptr0);
     }
-  average_result = (method != e_average_ARIMA) ? average_result * multiplicator : average_result;
 #if USE_ARIMA
   if (method == e_average_ARIMA)
   {
@@ -388,7 +387,7 @@ get_average_atSettings (s_channelSettings *a, uint32_t timestamp)
 {
   return faxplusbcs (
       get_average_from_buffer (a->buffer_ADC, a->max_N, timestamp, a->max_dt_ms,
-			       a->averaging_method, a->alpha, a->multiplicator),
+			       a->averaging_method, a->alpha),
       a);
 
 }

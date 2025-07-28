@@ -33,6 +33,7 @@ typedef struct __attribute__((packed))
   size_t tail;  // Points to the next element to be read
   size_t buffer_size;
   uint32_t dt_ms; // Minimum time in milliseconds between measurements
+  uint32_t last_data_ms;
 } s_BufferADC;
 
 void init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uint32_t dt_ms);
