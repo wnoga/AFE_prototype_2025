@@ -179,6 +179,7 @@ machine_DAC_set (s_regulatorSettings *rptr, uint16_t value)
 #warning "DEBUG_HARDWARE_CONTROL_DISABLED"
   return;
 #endif
+  rptr->ramp_curent_voltage_set_bits = value;
   switch (rptr->subdevice)
     {
     case AFECommandSubdevice_master:
@@ -348,8 +349,8 @@ machine_main_init_0 (void)
 #endif
       afe_regulatorSettings[i0].ramp_bit_step_every_ms =
       AFE_REGULATOR_DEFAULT_ramp_bit_step_every_ms;
-      afe_regulatorSettings[i0].ramp_curent_voltage_set_bits = AFE_DAC_START;
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits = AFE_DAC_START;
+      afe_regulatorSettings[i0].ramp_curent_voltage_set_bits = 0x0FFF & (~AFE_DAC_START);
 #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
       afe_regulatorSettings[i0].ramp_target_voltage_set_bits_old = 0x0FFF & (~AFE_DAC_START);
 #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
@@ -447,9 +448,12 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
     {
       return;
     }
+  rptr->ramp_curent_voltage_set_bits = (uint16_t) HAL_DAC_GetValue ( // Get current DAC value
+      &hdac, rptr->subdevice == AFECommandSubdevice_master ? DAC_CHANNEL_1 : DAC_CHANNEL_2);
   if ((timestamp_ms - rptr->ramp_bit_step_timestamp_old_ms) >= rptr->ramp_bit_step_every_ms)
     {
       uint16_t d_bit = rptr->ramp_bit_step;
+      uint16_t set_to_bit = 0;
 #if USE_SMALLER_STEPS_NEAR_DAC_TARGET
       if (abs (
 	  (int32_t) rptr->ramp_curent_voltage_set_bits
@@ -471,11 +475,11 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 	      if (((int32_t) rptr->ramp_curent_voltage_set_bits + (int32_t) d_bit)
 		  >= (int32_t) rptr->ramp_target_voltage_set_bits)
 		{
-		  rptr->ramp_curent_voltage_set_bits = rptr->ramp_target_voltage_set_bits;
+		  set_to_bit = rptr->ramp_target_voltage_set_bits;
 		}
 	      else
 		{
-		  rptr->ramp_curent_voltage_set_bits += d_bit;
+		  set_to_bit = rptr->ramp_curent_voltage_set_bits + d_bit;
 		}
 	    }
 	  else
@@ -483,11 +487,11 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 	      if (((int32_t) rptr->ramp_curent_voltage_set_bits - (int32_t) d_bit)
 		  <= (int32_t) rptr->ramp_target_voltage_set_bits)
 		{
-		  rptr->ramp_curent_voltage_set_bits = rptr->ramp_target_voltage_set_bits;
+		  set_to_bit = rptr->ramp_target_voltage_set_bits;
 		}
 	      else
 		{
-		  rptr->ramp_curent_voltage_set_bits -= d_bit;
+		  set_to_bit = rptr->ramp_curent_voltage_set_bits - d_bit;
 		}
 	    }
 
@@ -498,7 +502,7 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 #if TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
           // DAC hardware control is disabled, do nothing.
 #else // TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
-	  machine_DAC_set (rptr, rptr->ramp_curent_voltage_set_bits);
+	  machine_DAC_set (rptr, set_to_bit);
 #endif // TEMPERATURE_LOOP_HARDWARE_CONTROL_DAC_DISABLED
 	}
       else
@@ -519,7 +523,7 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 		}
 	    }
 #endif // TEMPERATURE_LOOP_CORRECT_BY_READING_ENABLED
-	  if (!rptr->ramp_target_reached)
+	  if (rptr->ramp_target_reached == 0)
 	    {
 	      rptr->ramp_target_reached = 1;
 	      CAN_Message_t tmp; // Local message for debug
@@ -536,61 +540,66 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 void
 enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 {
-  const uint8_t msg_count_per_subdev = 11;
+  const uint8_t msg_count_per_subdev = 12; // Should to be < 0x0F, to send more than 15 msgs
   uint8_t total_msg_count = msg_count_per_subdev;
   if (AFECommandSubdevice_both == (masked_channel & AFECommandSubdevice_both))
     {
-      total_msg_count = 2 * msg_count_per_subdev;
+      total_msg_count = 0x0F; // Keep above msg_count_per_subdev
     }
-  uint8_t cnt = 0;
   for (uint8_t i = 0; i < 2; ++i)
     {
       if (0x01 & (masked_channel >> i))
 	{
+	  uint8_t cnt = 0;
 	  uint8_t subdev = 1 << i;
 	  s_regulatorSettings *rs = &afe_regulatorSettings[i];
 	  s_ADC_Measurement tmp_adc;
 	  get_n_latest_from_buffer (rs->voltage_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
 	  rs->V = faxplusbcs ((float) tmp_adc.adc_value, rs->voltage_channelSettings_ptr);
-	  // Voltage
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 0 + cnt,
-						       total_msg_count, subdev, &rs->V);
-	  // Voltage in bytes
+	  // 0. Voltage
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &rs->V);
+	  // 1. Voltage in bytes
 	  float tmp_float = tmp_adc.adc_value;
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 1 + cnt,
-						       total_msg_count, subdev, &tmp_float);
-	  // Target Voltage
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 2 + cnt,
-						       total_msg_count, subdev, &rs->V_target);
-	  // Target Voltage in bytes
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &tmp_float);
+	  // 2. Ramp Target Voltage
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &rs->V_target);
+	  // 3. Ramp Target Voltage in bytes
 	  tmp_float = rs->ramp_target_voltage_set_bits;
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 3 + cnt,
-						       total_msg_count, subdev, &tmp_float);
-	  // Average temperature
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 4 + cnt,
-						       total_msg_count, subdev, &rs->T);
-	  // Last temperature in bytes
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &tmp_float);
+	  // 4. Ramp Current Voltage in bytes
+	  tmp_float = rs->ramp_curent_voltage_set_bits;
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &tmp_float);
+	  // 5. Average temperature
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &rs->T);
+	  // 6. Last temperature in bytes
 	  get_n_latest_from_buffer (rs->temperature_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
 	  tmp_float = tmp_adc.adc_value;
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 5 + cnt,
-						       total_msg_count, subdev, &tmp_float);
-	  // Old temperature
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 6 + cnt,
-						       total_msg_count, subdev, &rs->T_old);
-	  // V Offset
-	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, 7 + cnt,
-						       total_msg_count, subdev, &rs->V_offset);
-	  // Enabled?
-	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 8 + cnt, total_msg_count,
-						 subdev, (uint8_t*) &rs->enabled, 1);
-	  // Ramp target reached?
-	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, 9 + cnt, total_msg_count,
-						 subdev, (uint8_t*) &rs->ramp_target_reached, 1);
-	  // Timestamp
-	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, 10 + cnt,
-							 total_msg_count, subdev,
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &tmp_float);
+	  // 7. Old temperature
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &rs->T_old);
+	  // 8. V Offset
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &rs->V_offset);
+	  // 9. Enabled?
+	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, cnt++, total_msg_count, subdev,
+						 (uint8_t*) &rs->enabled, 1);
+	  // 10. Ramp target reached?
+	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, cnt++, total_msg_count, subdev,
+						 (uint8_t*) &rs->ramp_target_reached, 1);
+	  // 11. Timestamp
+	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, cnt++, total_msg_count,
+							 subdev,
 							 rs->ramp_bit_step_timestamp_old_ms);
-	  cnt += msg_count_per_subdev;
+
+	  total_msg_count = msg_count_per_subdev; // Reset counter (works only if subdevs <= 2)
 	}
     }
 }
