@@ -422,7 +422,12 @@ can_machine (void)
 #endif // WATCHDOG_FOR_CAN_RECIEVER_ENABLED
 	if (canState == e_CANMachineState_ERROR)
 	  {
-	    can_machine_state = e_can_machine_state_init;
+	    HAL_CAN_StateTypeDef canState = HAL_CAN_GetError (&hcan);
+	    if ((canState != HAL_CAN_STATE_ERROR) && (canState != HAL_CAN_STATE_TIMEOUT))
+	      {
+		can_machine_state = e_can_machine_state_init;
+	      }
+	    break;
 	  }
 
 	CAN_TransmitHandler (&hcan);

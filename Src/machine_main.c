@@ -540,7 +540,7 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
   uint8_t total_msg_count = msg_count_per_subdev;
   if (AFECommandSubdevice_both == (masked_channel & AFECommandSubdevice_both))
     {
-      total_msg_count *= 2;
+      total_msg_count = 2 * msg_count_per_subdev;
     }
   uint8_t cnt = 0;
   for (uint8_t i = 0; i < 2; ++i)
@@ -610,11 +610,7 @@ handle_getSubdeviceStatus (const s_can_msg_recieved *msg, CAN_Message_t *reply)
 {
   reply->id = CAN_ID_IN_MSG;
   reply->timestamp = HAL_GetTick (); // for timeout
-  uint8_t masked_channel = msg->Data[2] & 0x03;
-  if (0x00 == (masked_channel & AFECommandSubdevice_both))
-    {
-      return;
-    }
+  uint8_t masked_channel = msg->Data[2] & AFECommandSubdevice_both;
   enqueueSubdeviceStatus (reply, masked_channel);
 }
 
