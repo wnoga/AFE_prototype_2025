@@ -386,7 +386,7 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
     }
   // 0. Limit frequency.
   if ((timestamp_ms - rptr->last_loop_every_ms)
-      < rptr->loop_every_ms)
+      >= rptr->loop_every_ms)
     {
       rptr->last_loop_every_ms = timestamp_ms;
       // 1. Get the current temperature from the sensor.
