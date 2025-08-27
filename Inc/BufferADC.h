@@ -41,7 +41,7 @@ size_t CircularBuffer_GetItemCount (s_BufferADC *cb);
 int check_time_diff_is_more_than (uint32_t measurement_timestamp_ms, uint32_t timestamp_ms, uint32_t max_dt_ms, uint32_t dt_ms);
 size_t get_n_latest_from_buffer_max_dt_ms (s_BufferADC *cb, size_t N,s_ADC_Measurement *here, uint32_t timestamp_ms, uint32_t max_dt_ms);
 size_t get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here);
-void add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement);
+uint8_t add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement);
 
 
 #endif /* BUFFERADC_H_ */

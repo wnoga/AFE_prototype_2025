@@ -121,8 +121,11 @@ typedef enum
   e_average_HARMONIC,
   e_average_GEOMETRIC,
   e_average_TRIMMED,
-  e_average_WEIGHTED_EXPONENTIAL,
-  e_average_ARIMA
+  e_average_WEIGHTED_EXPONENTIAL
+#if USE_ARIMA
+  ,e_average_ARIMA
+#endif // USE_ARIMA
+  ,e_average_len // Keep for know the length of that enum
 } e_average;
 
 typedef struct

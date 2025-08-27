@@ -23,6 +23,7 @@ init_buffer (s_BufferADC *cb, s_ADC_Measurement *buffer, size_t buffer_size, uin
   cb->dt_ms = dt_ms;
   cb->buffer[0].timestamp_ms = 0;
   cb->buffer[0].adc_value = 0;
+  cb->last_data_ms = 0;
 #if USE_STACK_FOR_BUFFER
   free(cb->buffer);
   cb->buffer = malloc(buffer_size * sizeof(s_ADC_Measurement));
@@ -75,7 +76,7 @@ get_n_latest_from_buffer (s_BufferADC *cb, size_t N, s_ADC_Measurement *here)
   return get_n_latest_from_buffer_max_dt_ms (cb, N, here, HAL_GetTick (), UINT32_MAX);
 }
 
-inline void __attribute__ ((always_inline, optimize("-O3")))
+inline uint8_t __attribute__ ((always_inline, optimize("-O3")))
 add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement)
 {
   // Check if the buffer is not empty
@@ -87,7 +88,7 @@ add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement)
       if ((measurement->timestamp_ms - cb->buffer[last_index].timestamp_ms) < cb->dt_ms)
 	{
 	  // If the time difference is too small, do not add the new measurement
-	  return;
+	  return 0;
 	}
     }
   // Copy the new measurement to the buffer at the current head position
@@ -112,4 +113,5 @@ add_to_buffer (s_BufferADC *cb, s_ADC_Measurement *measurement)
 	  cb->tail = 0;
 	}
     }
+    return 1; // Data was pushed
 }

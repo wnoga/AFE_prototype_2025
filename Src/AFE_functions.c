@@ -52,7 +52,7 @@ compare_measurements (const void *a, const void *b)
 
 static float __attribute__((deprecated))
 calculate_average_old (s_ADC_Measurement *data, size_t N, e_average method, float alpha,
-		   uint32_t timestamp_ms)
+		       uint32_t timestamp_ms)
 {
   if (N == 0) return 0.0f;
   float sum = 0.0f;
@@ -143,40 +143,22 @@ calculate_average_old (s_ADC_Measurement *data, size_t N, e_average method, floa
 }
 
 inline size_t __attribute__ ((always_inline, optimize("-O3")))
-next_index (size_t i, size_t i_0, size_t N, size_t buffer_size, uint8_t fromTail)
+next_index (s_BufferADC *cb, size_t count, uint8_t fromTail)
 {
-  size_t offset;
   if (fromTail)
     {
-      offset = i_0 + i;
-      if (offset >= N)
-	{
-	  offset -= N;
-	}
-      else
-	{
-	  offset = buffer_size - (N - offset);
-	}
+      return (cb->tail + count) % cb->buffer_size;
     }
   else
     {
-      if (i_0 >= i)
-	{
-	  offset = i_0 - i;
-	}
-      else
-	{
-	  offset = buffer_size - (i - i_0);
-	}
+      return ((cb->head + cb->buffer_size - 1) // '-1' is for shift head from 'for write position'
+      - count) % cb->buffer_size; // always >= count
     }
-
-  return offset % buffer_size;
 }
-
 
 static inline void __attribute__ ((always_inline, optimize("-O3")))
 calculate_sum (float *sum, float *weight_sum, e_average method, s_ADC_Measurement *ptr,
-	       uint32_t timestamp_ms, float alpha, size_t cnt)
+	       uint32_t timestamp_ms, float alpha)
 {
   switch (method)
     {
@@ -205,7 +187,10 @@ calculate_sum (float *sum, float *weight_sum, e_average method, s_ADC_Measuremen
       }
     case e_average_GEOMETRIC:
       {
-	*sum = (cnt == 0) ? ptr->adc_value : (*sum) * ptr->adc_value;
+	if (ptr->adc_value > 0)
+	  {
+	    *sum += logf ((float) ptr->adc_value);
+	  }
 	break;
       }
     case e_average_WEIGHTED_EXPONENTIAL:
@@ -213,7 +198,7 @@ calculate_sum (float *sum, float *weight_sum, e_average method, s_ADC_Measuremen
 	uint32_t ru = timestamp_ms - ptr->timestamp_ms;
 	float r = fabsf ((float) ru);
 	float weight = expf (-r * alpha);
-	*sum += (weight * ptr->adc_value);
+	*sum += (weight * (float) ptr->adc_value);
 	*weight_sum += weight;
 	break;
       }
@@ -223,8 +208,8 @@ calculate_sum (float *sum, float *weight_sum, e_average method, s_ADC_Measuremen
 	    /* Update series for ARIMA */
 	    if (arima_n < N)
 {
-	      arima_series_timestamp[arima_n] = ptr->timestamp_ms;
-	      arima_series_value[arima_n] = faxplusbcs(ptr->adc_value, a); // Apply transformation here.
+	      arima_series_timestamp[arima_n] = (float)ptr->timestamp_ms;
+	      arima_series_value[arima_n] = faxplusbcs((float)ptr->adc_value, a); // Apply transformation here.
 	      ++arima_n;
 }
 	    break;
@@ -243,7 +228,7 @@ calculate_average (float sum, float weight_sum, e_average method, size_t cnt,
     {
     case e_average_STANDARD:
       {
-	return (cnt != 0) ? sum / (float) cnt : ptr0->adc_value;
+	return (cnt != 0) ? sum / (float) cnt : (float)ptr0->adc_value;
       }
     case e_average_EXPONENTIAL:
       {
@@ -251,7 +236,7 @@ calculate_average (float sum, float weight_sum, e_average method, size_t cnt,
       }
     case e_average_WEIGHTED_EXPONENTIAL:
       {
-	return (weight_sum != 0) ? sum / weight_sum : ptr0->adc_value;
+	return (weight_sum != 0) ? sum / weight_sum : (float)ptr0->adc_value;
       }
     case e_average_RMS:
       {
@@ -263,7 +248,7 @@ calculate_average (float sum, float weight_sum, e_average method, size_t cnt,
       }
     case e_average_GEOMETRIC:
       {
-	return powf (sum, 1.0f / (float) cnt);
+	return expf (sum / (float) cnt);
       }
 #if USE_ARIMA
 	case e_average_ARIMA:
@@ -316,7 +301,7 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
     }
 
   float average_result = 0.0f;
-  size_t count = 0;
+  // size_t count = 0;
   float sum = 0.0f;
   float weight_sum = 0.0f;
 
@@ -339,24 +324,24 @@ get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint3
   s_ADC_Measurement *ptr;
   size_t i = 0;
   size_t cnt = 0;
-  /* Set default value for sum */
-  if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
-    {
-      sum = NAN;
-    }
-  for (count = 0; count < N; ++count)
+  // /* Set default value for sum */
+  // if ((method == e_average_EXPONENTIAL) || (method == e_average_GEOMETRIC))
+  //   {
+  //     sum = NAN;
+  //   }
+  for (size_t count = 0; count < N; ++count)
     {
 
       // Here is place for a moving averages
-      i = next_index (count, i_0, N, cb->buffer_size, 1);
+      i = next_index (cb, count, 1);
       ptr = &cb->buffer[i];
       if ((timestamp_ms - ptr->timestamp_ms) > max_dt_ms)
 	{
 	  continue;
 	}
 
+      calculate_sum (&sum, &weight_sum, method, ptr, timestamp_ms, alpha);
       ++cnt;
-      calculate_sum (&sum, &weight_sum, method, ptr, timestamp_ms, alpha, cnt);
     }
 
   /* Check if we have any data */
