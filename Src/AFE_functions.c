@@ -391,11 +391,14 @@ get_number_of_channels (uint8_t channels_mask)
   return number_of_channels;
 }
 
-/***
- * FIXME Create conversion from float to DAC uint16_t value
- */
 inline uint16_t __attribute ((always_inline, optimize("-O3")))
 machine_DAC_convert_V_to_DAC_value (float V, s_regulatorSettings *regulatorSettings)
 {
   return (uint16_t) roundf (faxplusb (V, regulatorSettings->a_dac, regulatorSettings->b_dac));
+}
+
+inline float __attribute__((always_inline, optimize("-O3")))
+machine_DAC_convert_DAC_value_to_V (uint16_t dac_value, s_regulatorSettings *regulatorSettings)
+{
+  return ( (float)dac_value - regulatorSettings->b_dac ) / regulatorSettings->a_dac;
 }

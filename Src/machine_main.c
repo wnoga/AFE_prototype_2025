@@ -410,6 +410,8 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
       // 4. Calculate the new target voltage and corresponding DAC value.
       float new_target_voltage = get_voltage_for_SiPM_x (current_temperature, rptr);
       uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (new_target_voltage, rptr);
+      // Correction
+      new_target_voltage = machine_DAC_convert_DAC_value_to_V(new_target_dac_bits, rptr);
 
       // 5. Update the regulator's state with the new values.
       // Set the target for the DAC ramp function.
@@ -571,7 +573,7 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &tmp_float);
 	  // 4. Ramp Current Voltage
-	  tmp_float = ((float)rs->ramp_curent_voltage_set_bits - rs->b_dac) / rs->a_dac;
+	  tmp_float = machine_DAC_convert_DAC_value_to_V(rs->ramp_curent_voltage_set_bits, rs);
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &tmp_float);
 	  // 5. Ramp Current Voltage in bytes
