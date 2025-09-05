@@ -540,7 +540,7 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 void
 enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 {
-  const uint8_t msg_count_per_subdev = 12; // Should to be < 0x0F, to send more than 15 msgs
+  const uint8_t msg_count_per_subdev = 13; // Should to be < 0x0F, to send more than 15 msgs
   uint8_t total_msg_count = msg_count_per_subdev;
   if (AFECommandSubdevice_both == (masked_channel & AFECommandSubdevice_both))
     {
@@ -570,31 +570,35 @@ enqueueSubdeviceStatus (CAN_Message_t *reply, uint8_t masked_channel)
 	  tmp_float = rs->ramp_target_voltage_set_bits;
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &tmp_float);
-	  // 4. Ramp Current Voltage in bytes
+	  // 4. Ramp Current Voltage
+	  tmp_float = ((float)rs->ramp_curent_voltage_set_bits - rs->b_dac) / rs->a_dac;
+	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
+						       subdev, &tmp_float);
+	  // 5. Ramp Current Voltage in bytes
 	  tmp_float = rs->ramp_curent_voltage_set_bits;
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &tmp_float);
-	  // 5. Average temperature
+	  // 6. Average temperature
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &rs->T);
-	  // 6. Last temperature in bytes
+	  // 7. Last temperature in bytes
 	  get_n_latest_from_buffer (rs->temperature_channelSettings_ptr->buffer_ADC, 1, &tmp_adc);
 	  tmp_float = tmp_adc.adc_value;
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &tmp_float);
-	  // 7. Old temperature
+	  // 8. Old temperature
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &rs->T_old);
-	  // 8. V Offset
+	  // 9. V Offset
 	  CANCircularBuffer_enqueueMessage_data_float (&canTxBuffer, reply, cnt++, total_msg_count,
 						       subdev, &rs->V_offset);
-	  // 9. Enabled?
+	  // 10. Enabled?
 	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, cnt++, total_msg_count, subdev,
 						 (uint8_t*) &rs->enabled, 1);
-	  // 10. Ramp target reached?
+	  // 11. Ramp target reached?
 	  CANCircularBuffer_enqueueMessage_data (&canTxBuffer, reply, cnt++, total_msg_count, subdev,
 						 (uint8_t*) &rs->ramp_target_reached, 1);
-	  // 11. Timestamp
+	  // 12. Timestamp
 	  CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, reply, cnt++, total_msg_count,
 							 subdev,
 							 rs->ramp_bit_step_timestamp_old_ms);
