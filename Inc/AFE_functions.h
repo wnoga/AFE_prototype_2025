@@ -189,6 +189,7 @@ typedef struct
 
 float get_average_from_buffer (s_BufferADC *cb, size_t N, uint32_t timestamp_ms, uint32_t max_dt_ms, e_average method, float alpha);
 float get_average_atSettings (s_channelSettings *a, uint32_t timestamp);
+float get_voltage_for_SiPM (float T, float a, float T_0, float U_0, float U_cor);
 float get_voltage_for_SiPM_x (float T, s_regulatorSettings *regulatorSettings);
 float faxplusb (float value, float a, float b);
 float faxplusbcs (float value, s_channelSettings *ch);

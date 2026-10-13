@@ -528,11 +528,13 @@ process_dac_ramping (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 	  if (rptr->ramp_target_reached == 0)
 	    {
 	      rptr->ramp_target_reached = 1;
+        #if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
 	      CAN_Message_t tmp; // Local message for debug
 	      tmp.id = CAN_ID_IN_MSG;
 	      tmp.timestamp = HAL_GetTick (); // for timeout
 	      tmp.data[0] = AFECommand_debug_machine_control;
 	      enqueueSubdeviceStatus (&tmp, rptr->subdevice);
+        #endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
 	    }
 	}
     }
@@ -1156,7 +1158,7 @@ can_execute (const s_can_msg_recieved msg)
       /* Send SI data [Data[0]] from ADC channel [Data[2]] as float average value[Data[3:7]]  */
     case AFECommand_getSensorDataSi_average_byMask:
       {
-	handle_getSensorDataBytes_average_byMask (&msg, &tmp);
+	handle_getSensorDataSi_average_byMask (&msg, &tmp);
 	break;
       }
     case AFECommand_getSensorDataBytes_last_byMask:
