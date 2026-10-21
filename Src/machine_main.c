@@ -1150,12 +1150,16 @@ can_execute (const s_can_msg_recieved msg)
 
     case AFECommand_getSyncTimestamp:
       {
-	/* timestamp */
+	/* Pack AFE local timestamp */
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 0, 2, 0x00,
 						       HAL_GetTick ());
-	/* recieved timestamp */
+	/* Echo back the received HUB timestamp from msg payload */
+	uint32_t hub_sent_timestamp = 0;
+	if (msg.DLC >= 6) {
+	    memcpy(&hub_sent_timestamp, &msg.Data[2], sizeof(uint32_t));
+	}
 	CANCircularBuffer_enqueueMessage_timestamp_ms (&canTxBuffer, &tmp, 1, 2, 0x00,
-						       msg.timestamp);
+						       hub_sent_timestamp);
 	break;
       }
 
