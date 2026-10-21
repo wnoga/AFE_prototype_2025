@@ -373,6 +373,47 @@ machine_main_init_0 (void)
   afe_regulatorSettings[1].subdevice = AFECommandSubdevice_slave;
 }
 
+/**
+ * @brief Helper function to calculate and apply a new target voltage based on temperature.
+ * Can be called from the temperature loop or external triggers (e.g., voltage shift).
+ */
+static inline void __attribute__((always_inline, optimize("-O3")))
+apply_regulator_voltage_update (s_regulatorSettings *rptr, float current_temperature)
+{
+  // 1. Calculate the new target voltage and corresponding DAC value.
+  float new_target_voltage = get_voltage_for_SiPM_x (current_temperature, rptr);
+  uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (new_target_voltage, rptr);
+
+  // Correction
+  new_target_voltage = machine_DAC_convert_DAC_value_to_V (new_target_dac_bits, rptr);
+
+  // 2. Update the regulator's state with the new values.
+  rptr->ramp_target_voltage_set_bits = new_target_dac_bits;
+
+  // Update status variables for monitoring.
+  rptr->T = current_temperature;
+  rptr->V_target = new_target_voltage;
+
+  // Update the last-seen temperature for future dead-band checks.
+  rptr->T_old = current_temperature;
+
+#if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+  // 3. Send a debug message via CAN if the target DAC value has changed.
+  if (new_target_dac_bits != rptr->ramp_target_voltage_set_bits_old)
+    {
+      CAN_Message_t tmp; // Local message for debug
+      tmp.id = CAN_ID_IN_MSG;
+      tmp.timestamp = HAL_GetTick (); // for timeout
+      tmp.data[0] = AFECommand_debug_machine_control;
+      enqueueSubdeviceStatus (&tmp, rptr->subdevice);
+    }
+  rptr->ramp_target_voltage_set_bits_old = new_target_dac_bits;
+#endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+}
+
+/**
+ * @brief Periodic loop handling frequency restriction, sensor reading, and dead-band validation.
+ */
 static inline void __attribute__((always_inline, optimize("-O3")))
 process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
 {
@@ -380,62 +421,37 @@ process_temperature_loop (s_regulatorSettings *rptr, uint32_t timestamp_ms)
   // Temperature loop is disabled, do nothing.
   return;
 #endif // HARDWARE_CONTROL_TEMPERATURE_LOOP_DISABLED
+
   if (rptr->enabled == 0)
     {
       return;
     }
+
   // 0. Limit frequency.
-  if ((timestamp_ms - rptr->last_loop_every_ms)
-      >= rptr->loop_every_ms)
+  if ((timestamp_ms - rptr->last_loop_every_ms) >= rptr->loop_every_ms)
     {
       rptr->last_loop_every_ms = timestamp_ms;
+
       // 1. Get the current temperature from the sensor.
       float current_temperature = get_average_atSettings (rptr->temperature_channelSettings_ptr,
-							  timestamp_ms);
+                                                          timestamp_ms);
       // 2. Validate the temperature reading.
-      if (isnan(current_temperature))
-	{
-	  /* Skip if temperature reading is not a number (e.g., sensor error). */
-	  return;
-	}
+      if (isnan (current_temperature))
+        {
+          /* Skip if temperature reading is not a number (e.g., sensor error). */
+          return;
+        }
 
       // 3. Check if the temperature has changed significantly (outside the dead-band).
       float temperature_delta = fabsf (current_temperature - rptr->T_old);
       if (temperature_delta < rptr->dT)
-	{
-	  // No significant change, no adjustment needed.
-	  return;
-	}
+        {
+          // No significant change, no adjustment needed.
+          return;
+        }
 
-      // 4. Calculate the new target voltage and corresponding DAC value.
-      float new_target_voltage = get_voltage_for_SiPM_x (current_temperature, rptr);
-      uint16_t new_target_dac_bits = machine_DAC_convert_V_to_DAC_value (new_target_voltage, rptr);
-      // Correction
-      new_target_voltage = machine_DAC_convert_DAC_value_to_V(new_target_dac_bits, rptr);
-
-      // 5. Update the regulator's state with the new values.
-      // Set the target for the DAC ramp function.
-      rptr->ramp_target_voltage_set_bits = new_target_dac_bits;
-
-      // Update status variables for monitoring.
-      rptr->T = current_temperature;
-      rptr->V_target = new_target_voltage;
-
-      // Update the last-seen temperature for the next dead-band check.
-      rptr->T_old = current_temperature;
-
-#if DEBUG_SEND_BY_CAN_MACHINE_CONTROL
-      // 6. Send a debug message via CAN if the target DAC value has changed.
-      if (new_target_dac_bits != rptr->ramp_target_voltage_set_bits_old)
-	{
-	  CAN_Message_t tmp; // Local message for debug
-	  tmp.id = CAN_ID_IN_MSG;
-	  tmp.timestamp = HAL_GetTick (); // for timeout
-	  tmp.data[0] = AFECommand_debug_machine_control;
-	  enqueueSubdeviceStatus (&tmp, rptr->subdevice);
-	}
-      rptr->ramp_target_voltage_set_bits_old = new_target_dac_bits;
-#endif // DEBUG_SEND_BY_CAN_MACHINE_CONTROL
+      // 4. Ignite voltage update using the helper function
+      apply_regulator_voltage_update (rptr, current_temperature);
     }
 }
 
@@ -1053,6 +1069,7 @@ handle_set_regulator_property (const s_can_msg_recieved *msg, CAN_Message_t *rep
 	{
 	  uint8_t *dst = (uint8_t*) &afe_regulatorSettings[subdev];
 	  memcpy (dst + offset, &msg->Data[3], size);
+	  apply_regulator_voltage_update (&afe_regulatorSettings[subdev], afe_regulatorSettings[subdev].T);
 	}
     }
   // Echo the command back as confirmation
